@@ -421,7 +421,45 @@ function App() {
           <div><strong>先机罗盘</strong><span>Foresight Compass</span></div>
           <button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="关闭导航"><X size={18} /></button>
         </div>
-        <n�N-�G����ƭy�uition')}>直觉</button>
+        <nav className="nav-list" aria-label="主导航">
+          <button className={activeNav === 'workspace' ? 'active' : ''} onClick={() => handleNav('workspace')}><LayoutDashboard size={18} />洞察工作台</button>
+          <button className={activeNav === 'radar' ? 'active' : ''} onClick={() => handleNav('radar')}><Target size={18} />痛点雷达</button>
+          <button className={activeNav === 'alerts' ? 'active' : ''} onClick={() => handleNav('alerts')}><Bell size={18} />信号监控<span className="nav-badge">2</span></button>
+          <button className={activeNav === 'history' ? 'active' : ''} onClick={() => handleNav('history')}><History size={18} />历史洞察</button>
+        </nav>
+        <div className="sidebar-section-label">工作空间</div>
+        <button className="workspace-switcher" onClick={() => setToast('当前为 Demo 工作空间')}>
+          <span className="workspace-avatar">D</span>
+          <span><strong>Demo 空间</strong><small>冷启动数据模式</small></span>
+          <ChevronDown size={16} />
+        </button>
+        <div className="sidebar-foot">
+          <button onClick={() => handleNav('settings')}><Settings size={17} />设置</button>
+          <div className="compliance-mini"><ShieldCheck size={16} /><span>EU AI Act §50<br /><small>合规标记已开启</small></span></div>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <button className="icon-button menu-button" onClick={() => setMobileNav(true)} aria-label="打开导航"><PanelTop size={20} /></button>
+          <div className="breadcrumb"><span>洞察工作台</span><ArrowRight size={14} /><strong>{query || '新建洞察'}</strong></div>
+          <div className="top-actions">
+            <span className={`data-status ${runtimeState}`}><i />{runtimeMessage}</span>
+            <button className="icon-button" onClick={() => setHistoryOpen(true)} aria-label="查看历史"><History size={18} /></button>
+            <button className="avatar-button" title="当前用户">方</button>
+          </div>
+        </header>
+
+        <div className="page-wrap">
+          <section className="query-workbench">
+            <div className="section-heading-row">
+              <div>
+                <span className="eyebrow">全球市场机会扫描</span>
+                <h1>今天，应该卖什么？</h1>
+                <p>多 Agent 持续汇聚全球信号，生成可执行、可追溯、可证伪的行动指令。</p>
+              </div>
+              <div className="mode-switch" aria-label="洞察模式">
+                <button className={mode === 'intuition' ? 'active' : ''} onClick={() => setMode('intuition')}>直觉</button>
                 <button className={mode === 'evidence' ? 'active' : ''} onClick={() => setMode('evidence')}><BadgeCheck size={15} />有据 AI</button>
               </div>
             </div>
