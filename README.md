@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](backend/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](src/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-SSE-009688?logo=fastapi&logoColor=white)](backend/foresight/api.py)
-[![CI](https://github.com/royd132/foresight-compass/actions/workflows/ci.yml/badge.svg)](https://github.com/royd132/foresight-compass/actions/workflows/ci.yml)
+[![CI](https://github.com/royd132/xianjiluopan/actions/workflows/ci.yml/badge.svg)](https://github.com/royd132/xianjiluopan/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -150,8 +150,8 @@ Runtime 采用分阶段并行：采集完成后，评论分析、市场分析和
 ### 方式一：Docker Compose
 
 ```bash
-git clone https://github.com/royd132/foresight-compass.git
-cd foresight-compass
+git clone https://github.com/royd132/xianjiluopan.git
+cd xianjiluopan
 docker compose up --build
 ```
 
