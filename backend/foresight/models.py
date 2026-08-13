@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import Any, Literal
+from uuid import uuid4
+
+from pydantic import BaseModel, Field, model_validator
+
+
+class CardType(str, Enum):
+    PRODUCT_SELECTION = "product_selection"
+    PRICING = "pricing"
+    COMPETITIVE = "competitive"
+    PRIVATE_DOMAIN = "private_domain"
+
+
+class ConfidenceLevel(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class ResearchRequest(BaseModel):
+    category: str = Field(min_length=2, max_length=100)
+    market: str = Field(default="BR", min_length=2, max_length=5)
+    mode: Literal["mock", "hybrid", "real"] = "mock"
+    languages: list[str] = Field(default_factory=lambda: ["pt", "en", "es"])
+
+
+class EvidenceItem(BaseModel):
+    evidence_id: str = Field(default_factory=lambda: str(uuid4()))
+    source_name: str
+    source_type: Literal["trend", "review", "customs", "freight", "price", "social"]
+    claim: str
+    raw_value: str
+    url: str | None = None
+    language: str = "en"
+    collected_at: datetime
+    confidence: float = Field(ge=0, le=1)
+    verified: bool = True
+
+
+class PrivateDomainHook(BaseModel):
+    seed_audience: str
+    channel: str
+    hook_message: str
+    expected_conversion_hint: str | None = None
+
+
+class FailureCondition(BaseModel):
+    condition: str
+    metric_to_watch: str
+    threshold: str
+    action_on_trigger: Literal["recalculate", "abort", "watch"]
+
+
+class DecisionCard(BaseModel):
+    card_id: str = Field(default_factory=lambda: str(uuid4()))
+    card_type: CardType
+    version: int = 1
+    action_title: str
+    action_detail: str
+    confidence: ConfidenceLevel
+    confidence_score: float = Field(ge=0, le=1)
+    validity_days: int = Field(default=14, ge=1, le=90)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime | None = None
+    evidences: list[EvidenceItem] = Field(min_length=3)
+    private_domain_hook: PrivateDomainHook
+    failure_conditions: list[FailureCondition] = Field(min_length=1)
+    data_sources: list[str]
+    collection_timestamp: datetime
+    ai_generated: bool = True
+    c2pa_signature: str | None = None
+    human_review_status: Literal["pending", "approved", "rejected", "discussed"] = "pending"
+    human_reviewer: str | None = None
+    human_reviewed_at: datetime | None = None
+    card_specific_data: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def fill_expiry(self) -> "DecisionCard":
+        if self.expires_at is None:
+            self.expires_at = self.generated_at + timedelta(days=self.validity_days)
+        return self
+
+
+class PainPoint(BaseModel):
+    pain_type: str
+    label: str
+    mentions: int
+    sentiment_intensity: float = Field(ge=0, le=1)
+    opportunity_index: float = Field(ge=0, le=1)
+    hidden_pain: bool = True
+    languages: list[str]
+    sample_original: str
+    sample_translation: str
+
+
+class SupplySignal(BaseModel):
+    signal_type: str
+    label: str
+    current_value: float
+    unit: str
+    change_pct: float
+    period: str
+    status: Literal["positive", "stable", "watch", "alert"]
+    source: str
+
+
+class ResearchResult(BaseModel):
+    task_id: str
+    request: ResearchRequest
+    cards: list[DecisionCard]
+    pain_points: list[PainPoint]
+    supply_signals: list[SupplySignal]
+    evidence_count: int
+    agents_completed: list[str]
+    mode: str
+    started_at: datetime
+    completed_at: datetime
+    trace_id: str
+
+
+class ReviewRequest(BaseModel):
+    status: Literal["approved", "rejected", "discussed"]
+    reviewer: str = "demo-user"
+    reason: str | None = None
+
+
+class FeedbackRecord(BaseModel):
+    feedback_id: str = Field(default_factory=lambda: str(uuid4()))
+    card_id: str
+    task_id: str
+    feedback_type: Literal["approved", "rejected", "discussed", "auto_feedback"]
+    user_id: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    reason: str | None = None
