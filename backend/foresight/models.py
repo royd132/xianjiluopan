@@ -24,6 +24,7 @@ class ConfidenceLevel(str, Enum):
 class ResearchRequest(BaseModel):
     category: str = Field(min_length=2, max_length=100)
     market: str = Field(default="BR", min_length=2, max_length=5)
+    workspace_id: str = Field(default="default", min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
     mode: Literal["mock", "hybrid", "real"] = "mock"
     languages: list[str] = Field(default_factory=lambda: ["pt", "en", "es"])
 
@@ -126,6 +127,11 @@ class ReviewRequest(BaseModel):
     status: Literal["approved", "rejected", "discussed"]
     reviewer: str = "demo-user"
     reason: str | None = None
+    failure_type: Literal["weak_evidence", "stale_evidence", "overconfident", "bad_action"] | None = None
+
+
+class ProviderReloadRequest(BaseModel):
+    version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$", max_length=40)
 
 
 class FeedbackRecord(BaseModel):
@@ -136,3 +142,4 @@ class FeedbackRecord(BaseModel):
     user_id: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     reason: str | None = None
+    failure_type: Literal["weak_evidence", "stale_evidence", "overconfident", "bad_action"] | None = None

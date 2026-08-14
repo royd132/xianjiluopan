@@ -16,7 +16,7 @@
 2. [它解决什么问题](#-它解决什么问题)
 3. [系统架构](#-系统架构)
 4. [六大核心 Agent](#-六大核心-agent)
-5. [Harness 与自进化](#-harness-与自进化)
+5. [Harness、热插拔与自进化](#-harness热插拔与自进化)
 6. [快速开始](#-快速开始)
 7. [API 与离线 CLI](#-api-与离线-cli)
 8. [关键代码](#-关键代码)
@@ -60,6 +60,8 @@
 - 事件驱动 `CollaborationBlackboard`；
 - 6 个职责明确的 Agent；
 - Harness 工具治理、Trace、Memory 与 Checkpoint；
+- DSH 式作用域扩展平面、可逆插件生命周期与 Provider 热更新；
+- 任务级组件快照，运行中任务锁定 Provider、工具和策略版本；
 - 四类决策卡 Schema 和安全评测闸门；
 - 多语言隐性痛点分析；
 - 供应链信号与反向条件；
@@ -133,17 +135,24 @@ Runtime 采用分阶段并行：采集完成后，评论分析、市场分析和
 - 单个 Agent 可独立重试或降级；
 - 新 Agent 只需声明输入与输出，不必修改其他 Agent。
 
-## 🧠 Harness 与自进化
+## 🧠 Harness、热插拔与自进化
+
+先机罗盘采用 **EvoAgent 式可靠内核 + DSH 式扩展平面**。节点恢复、Run Ledger 和演进门禁保持稳定；Provider、Tool、Evaluator、Policy Pack 与 Agent Adapter 位于可替换层。
 
 | 模块 | 当前实现 | 作用 |
 |---|---|---|
-| Trace Writer | JSONL | 记录任务、Agent、Checkpoint 和异常 |
-| Memory Store | SQLite | 保存研究结果、复核卡片和正负案例 |
-| Checkpoint | JSON 快照 | 在 collected / analyzed / validated 阶段恢复 |
-| Tool Policy | 白名单 | 阻止 Agent 使用未授权工具 |
+| Run Ledger | SQLite 追加事件 | 统一记录节点、Agent、工具、Checkpoint、反馈与失败 |
+| Node Runtime | 状态机 + 重试/超时/取消 | 按 collect / analyze / compile / validate 节点可靠执行 |
+| Memory Store | SQLite | 保存研究结果、复核卡片、分类反馈和失败案例 |
+| Checkpoint | JSON 快照 + 节点状态 | 服务重启后恢复 Blackboard，并跳过已完成节点 |
+| Scoped Tool Registry | global / workspace / market / task 分层遮蔽 | 同名能力按最近作用域解析 |
+| Effect Stack | 注册副作用逆序撤销 | 插件安装失败或回滚时自动清理 |
+| Capability Guard | 单调权限拒绝 | 局部插件不能恢复已禁止工具 |
+| Component Snapshot | 插件、工具和策略版本 SHA-256 | 热更新只影响新任务，旧任务可复现和恢复 |
 | Evaluation Gate | Pydantic + 规则 | 缺证据、私域钩子或失效条件时拒绝输出 |
+| Policy Evolution | 完整 DecisionCard 双分区回放 | 候选经过生产 Safety Gate 后才能激活 |
 
-自进化飞轮已实现 Layer 1/2：运行时反馈收集和案例沉淀。SFT、LoRA、Agentic RL 属于积累足够合规样本后的 Layer 3 路线。
+Provider 更新采用 `staging -> health check -> activate`，旧 generation 保留给已启动任务。服务重启时 Runtime 按组件快照重建所需 generation，当前活动 Provider 版本也会持久化。自进化飞轮则完成反馈收集、失败案例沉淀、候选策略生成、真实决策卡 Validation/Holdout 回放、人工激活与版本回滚。
 
 ## 🚀 快速开始
 
@@ -202,7 +211,18 @@ npm.cmd run dev -- --port 4173
 | GET | `/api/v1/research/{id}` | 查询状态和四卡结果 |
 | GET | `/api/v1/research/{id}/events` | SSE 事件流 |
 | GET | `/api/v1/research/{id}/checkpoint` | 获取最近 Checkpoint |
+| GET | `/api/v1/research/{id}/run-events` | 获取持久化 Run Ledger |
+| POST | `/api/v1/research/{id}/cancel` | 请求取消任务 |
+| POST | `/api/v1/research/{id}/resume` | 从最近 Checkpoint 恢复任务 |
 | POST | `/api/v1/cards/{id}/review` | 写入人工复核反馈 |
+| GET | `/api/v1/evolution` | 查询失败案例、策略版本和评测结果 |
+| POST | `/api/v1/evolution/candidates` | 生成候选并执行双分区回放 |
+| POST | `/api/v1/evolution/policies/{version}/activate` | 激活已通过门禁的策略 |
+| POST | `/api/v1/evolution/rollback` | 回滚到父策略版本 |
+| GET | `/api/v1/runtime/extensions` | 查看活动和退役的插件 generation |
+| POST | `/api/v1/runtime/providers/mock/reload` | 热更新内置 Mock Provider，新任务生效 |
+| POST | `/api/v1/runtime/providers/mock/rollback` | 回滚内置 Provider generation |
+| GET | `/api/v1/research/{id}/component-snapshot` | 查看任务固定的插件、工具和策略版本 |
 
 ### 离线 CLI
 
@@ -263,7 +283,7 @@ python -m pytest
 npm.cmd run build
 ```
 
-测试覆盖离线多 Agent 任务、四卡 Schema、事件序列、Checkpoint、反馈记忆和 API 健康检查。
+测试覆盖离线多 Agent 任务、四卡 Schema、事件序列、Checkpoint、反馈记忆、作用域遮蔽、单调权限 Guard、插件失败清理、Provider 热更新、跨重启 generation 恢复、组件快照和 API 健康检查。
 
 仓库还包含：
 
@@ -283,9 +303,11 @@ npm.cmd run build
 │   ├── api.py          # FastAPI + SSE
 │   ├── data.py         # Mock/真实数据 Provider 扩展点
 │   ├── events.py       # Blackboard 与事件协议
-│   ├── evolution.py    # 反馈飞轮 Layer 1/2
-│   ├── harness.py      # Trace/Memory/Checkpoint/工具策略
+│   ├── evolution.py    # 反馈、策略候选、评测、激活与回滚
+│   ├── extensions.py   # 作用域、插件生命周期、Guard 与组件快照
+│   ├── harness.py      # Run Ledger/节点恢复/工具注册/Memory
 │   ├── models.py       # Pydantic 领域模型
+│   ├── policy.py       # 线上运行与离线回放共用的生产门禁
 │   └── runtime.py      # 多 Agent 编排器
 ├── src/                # React 洞察工作台
 ├── tests/              # 后端自动化测试
@@ -299,6 +321,7 @@ npm.cmd run build
 
 - [系统架构](docs/系统架构.md)
 - [Agent 与事件协议](docs/Agent与事件协议.md)
+- [Harness、热插拔与受控自进化 v3](docs/Harness与自进化_v3.md)
 - [开发与扩展指南](docs/开发指南.md)
 - [原始完整 PRD](docs/PRD_先机罗盘_v1.0.md)
 - [初赛提交材料](docs/初赛提交材料.md)
@@ -341,6 +364,11 @@ SFT、LoRA 和强化学习属于数据积累后的模型演进路线，不会在
 - [x] 四类 Decision Cards
 - [x] FastAPI + SSE + React Workbench
 - [x] Trace / Memory / Checkpoint / Feedback Flywheel
+- [x] 可恢复节点 Runtime、Run Ledger 与工具注册表
+- [x] 策略候选、Validation/Holdout 门禁、激活与回滚
+- [x] DSH 式 Effect Stack、作用域 Registry 与单调权限 Guard
+- [x] Provider 热更新、任务级组件快照与跨重启 generation 恢复
+- [x] 完整 DecisionCard 生产门禁回放与数据指纹
 - [x] Docker 与 CI
 - [ ] Google Trends / UN Comtrade 真实 Provider
 - [ ] 可替换 Model Adapter 与多模型 Fallback

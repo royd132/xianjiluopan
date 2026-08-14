@@ -17,6 +17,7 @@ from .models import (
     PrivateDomainHook,
     ResearchRequest,
 )
+from .policy import DEFAULT_POLICY, evaluate_decision_cards
 
 
 class BaseAgent(ABC):
@@ -40,8 +41,13 @@ class CollectorAgent(BaseAgent):
         self.provider = provider
 
     async def run(self, request: ResearchRequest, board: CollaborationBlackboard, harness: AgentHarness, trace_id: str) -> None:
-        harness.assert_tool_allowed("mock_data")
-        raw = await self.provider.collect(request)
+        raw = await harness.call_tool(
+            "mock_data",
+            self.name,
+            trace_id,
+            board.task_id,
+            request=request,
+        )
         await board.publish_artifact("raw_market_data", raw, self.name)
         await board.publish_artifact("evidences", raw["evidences"], self.name)
 
@@ -160,21 +166,23 @@ class SafetyEvaluationAgent(BaseAgent):
 
     async def run(self, request: ResearchRequest, board: CollaborationBlackboard, harness: AgentHarness, trace_id: str) -> None:
         cards: list[DecisionCard] = board.read("decision_cards_draft", [])
-        failures: list[str] = []
-        for card in cards:
-            if len(card.evidences) < 3:
-                failures.append(f"{card.card_id}: missing evidence")
-            if not card.private_domain_hook.hook_message:
-                failures.append(f"{card.card_id}: missing private domain hook")
-            if not card.failure_conditions:
-                failures.append(f"{card.card_id}: missing failure condition")
-            if not any(e.language != "en" for e in card.evidences):
-                failures.append(f"{card.card_id}: missing non-English evidence")
-        if failures:
-            raise ValueError("Decision gate rejected cards: " + "; ".join(failures))
-        await board.publish_artifact("decision_cards", cards, self.name)
-        await board.publish_artifact("evaluation", {"passed": True, "score": 0.91, "checks": 16}, self.name)
-        await board.publish_event(RuntimeEvent(EventType.GATE_PASSED, board.task_id, self.name, "All decision cards passed the HITL preflight gate", {"cards": len(cards)}))
+        policy_snapshot = harness.policy_for_task(board.task_id)
+        policy = dict(policy_snapshot.get("policy") or DEFAULT_POLICY)
+        outcome = evaluate_decision_cards(cards, policy)
+        if not outcome.accepted:
+            raise ValueError("Decision gate rejected cards: " + "; ".join(outcome.failures))
+        await board.publish_artifact("decision_cards", outcome.cards, self.name)
+        await board.publish_artifact(
+            "evaluation",
+            {
+                "passed": True,
+                "score": 0.91,
+                "checks": outcome.checks,
+                "policy_version": policy_snapshot.get("version", "embedded-default"),
+            },
+            self.name,
+        )
+        await board.publish_event(RuntimeEvent(EventType.GATE_PASSED, board.task_id, self.name, "All decision cards passed the HITL preflight gate", {"cards": len(outcome.cards), "policy_version": policy_snapshot.get("version", "embedded-default")}))
 
 
 async def run_parallel(agents: list[BaseAgent], request: ResearchRequest, board: CollaborationBlackboard, harness: AgentHarness, trace_id: str) -> None:

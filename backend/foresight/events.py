@@ -17,6 +17,7 @@ class EventType(str, Enum):
     CHECKPOINT_SAVED = "checkpoint.saved"
     TASK_COMPLETED = "task.completed"
     TASK_FAILED = "task.failed"
+    TASK_CANCELLED = "task.cancelled"
     FEEDBACK_RECORDED = "feedback.recorded"
 
 
@@ -82,10 +83,12 @@ class CollaborationBlackboard:
         try:
             for event in self.events:
                 yield event
+                if event.event_type in {EventType.TASK_COMPLETED, EventType.TASK_FAILED, EventType.TASK_CANCELLED}:
+                    return
             while True:
                 event = await queue.get()
                 yield event
-                if event.event_type in {EventType.TASK_COMPLETED, EventType.TASK_FAILED}:
+                if event.event_type in {EventType.TASK_COMPLETED, EventType.TASK_FAILED, EventType.TASK_CANCELLED}:
                     break
         finally:
             if queue in self._subscribers:

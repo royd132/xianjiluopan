@@ -240,10 +240,22 @@ function App() {
   const [decisionCards, setDecisionCards] = useState(cards);
   const [runtimeState, setRuntimeState] = useState('checking');
   const [runtimeMessage, setRuntimeMessage] = useState('正在检测多 Agent Runtime');
+  const [evolution, setEvolution] = useState(null);
+  const [evolutionLoading, setEvolutionLoading] = useState(false);
   const resultsRef = useRef(null);
   const eventSourceRef = useRef(null);
 
   const selectedMarket = useMemo(() => markets.find((item) => item.code === market), [market]);
+
+  const loadEvolution = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/evolution');
+      if (!response.ok) throw new Error('evolution unavailable');
+      setEvolution(await response.json());
+    } catch {
+      setEvolution(null);
+    }
+  };
 
   useEffect(() => {
     if (!toast) return;
@@ -277,6 +289,7 @@ function App() {
       .then(() => {
         setRuntimeState('connected');
         setRuntimeMessage('多 Agent Runtime 已连接');
+        loadEvolution();
       })
       .catch(() => {
         setRuntimeState('offline');
@@ -387,20 +400,71 @@ function App() {
 
   const setReview = async (status) => {
     setReviewStatus(status);
-    const runtimeCardId = selectedCard?.runtimeCard?.card_id;
+    const runtimeCardId = selectedCard?.runtimeCard?.card_id || decisionCards[0]?.runtimeCard?.card_id;
     if (runtimeCardId && runtimeState === 'connected') {
       try {
-        await fetch(`http://localhost:8000/api/v1/cards/${runtimeCardId}/review`, {
+        const response = await fetch(`http://localhost:8000/api/v1/cards/${runtimeCardId}/review`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status, reviewer: 'demo-user' }),
+          body: JSON.stringify({
+            status,
+            reviewer: 'demo-user',
+            reason: status === 'rejected' ? '证据数量与原语覆盖不足，需要提高发布门槛' : null,
+            failure_type: status === 'rejected' ? 'weak_evidence' : null,
+          }),
         });
+        if (!response.ok) throw new Error('review failed');
+        await loadEvolution();
       } catch {
         setToast('反馈已保存在页面，Runtime 写入失败');
         return;
       }
     }
     setToast(status === 'approved' ? '已采纳，反馈将沉淀至案例库' : status === 'rejected' ? '已驳回此建议' : '已标记为待议');
+  };
+
+  const createEvolutionCandidate = async () => {
+    setEvolutionLoading(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/evolution/candidates', { method: 'POST' });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'candidate failed');
+      await loadEvolution();
+      setToast(`${payload.candidate_version} 已通过 Validation / Holdout 门禁`);
+    } catch (error) {
+      setToast(error.message || '请先驳回一张真实 Runtime 决策卡');
+    } finally {
+      setEvolutionLoading(false);
+    }
+  };
+
+  const activateEvolutionPolicy = async (version) => {
+    setEvolutionLoading(true);
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/evolution/policies/${version}/activate`, { method: 'POST' });
+      if (!response.ok) throw new Error('activate failed');
+      await loadEvolution();
+      setToast(`${version} 已激活，后续任务将使用新证据门槛`);
+    } catch {
+      setToast('策略尚未通过评测门禁');
+    } finally {
+      setEvolutionLoading(false);
+    }
+  };
+
+  const rollbackEvolutionPolicy = async () => {
+    setEvolutionLoading(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/evolution/rollback', { method: 'POST' });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'rollback failed');
+      await loadEvolution();
+      setToast(`已回滚至 ${payload.version}`);
+    } catch (error) {
+      setToast(error.message || '当前策略已是基线版本');
+    } finally {
+      setEvolutionLoading(false);
+    }
   };
 
   const handleNav = (id) => {
@@ -410,8 +474,15 @@ function App() {
     if (id === 'settings') setToast('数据源与预警设置将在下一版本开放');
     if (id === 'alerts') document.getElementById('supply-chain')?.scrollIntoView({ behavior: 'smooth' });
     if (id === 'radar') document.getElementById('pain-radar')?.scrollIntoView({ behavior: 'smooth' });
+    if (id === 'evolution') document.getElementById('evolution-center')?.scrollIntoView({ behavior: 'smooth' });
     if (id === 'workspace') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  const activePolicy = evolution?.active_policy;
+  const readyPolicy = evolution?.policy_versions?.find((item) => item.status === 'ready');
+  const latestEvolutionRun = evolution?.evolution_runs?.[0];
+  const openFailures = evolution?.failure_cases?.filter((item) => item.status === 'open') || [];
+  const validationImprovement = latestEvolutionRun?.metrics?.validation_improvement || 0;
 
   return (
     <div className="app-shell">
@@ -426,6 +497,7 @@ function App() {
           <button className={activeNav === 'radar' ? 'active' : ''} onClick={() => handleNav('radar')}><Target size={18} />痛点雷达</button>
           <button className={activeNav === 'alerts' ? 'active' : ''} onClick={() => handleNav('alerts')}><Bell size={18} />信号监控<span className="nav-badge">2</span></button>
           <button className={activeNav === 'history' ? 'active' : ''} onClick={() => handleNav('history')}><History size={18} />历史洞察</button>
+          <button className={activeNav === 'evolution' ? 'active' : ''} onClick={() => handleNav('evolution')}><Activity size={18} />演进中心{openFailures.length > 0 && <span className="nav-badge">{openFailures.length}</span>}</button>
         </nav>
         <div className="sidebar-section-label">工作空间</div>
         <button className="workspace-switcher" onClick={() => setToast('当前为 Demo 工作空间')}>
@@ -581,6 +653,33 @@ function App() {
               <button className={reviewStatus === 'approved' ? 'approved active' : 'approved'} onClick={() => setReview('approved')}><CheckCircle2 size={16} />采纳</button>
               <button className={reviewStatus === 'discussed' ? 'discussed active' : 'discussed'} onClick={() => setReview('discussed')}><MessageCircleMore size={16} />待议</button>
               <button className={reviewStatus === 'rejected' ? 'rejected active' : 'rejected'} onClick={() => setReview('rejected')}><XCircle size={16} />驳回</button>
+            </div>
+          </section>
+
+          <section className="evolution-panel" id="evolution-center">
+            <div className="evolution-head">
+              <div><span className="eyebrow">Harness Evolution</span><h2>策略演进中心</h2><p>失败案例不会直接改写线上策略，候选必须通过 Validation 与 Holdout 非回归门禁。</p></div>
+              <div className="evolution-head-actions">
+                <span className="policy-version"><ShieldCheck size={15} />当前 {activePolicy?.version || 'policy-v1'}</span>
+                <button className="icon-button" onClick={loadEvolution} aria-label="刷新演进状态"><RefreshCw size={17} /></button>
+              </div>
+            </div>
+            <div className="evolution-flow" aria-label="策略演进流程">
+              {['失败案例', '候选策略', 'Validation', 'Holdout', '人工激活'].map((step, index) => <div key={step} className={index === 0 && openFailures.length ? 'active' : index > 0 && latestEvolutionRun ? 'done' : ''}><span>{index + 1}</span><strong>{step}</strong></div>)}
+            </div>
+            <div className="evolution-metrics">
+              <div><span>待处理失败案例</span><strong>{openFailures.length}</strong><small>{openFailures[0]?.failure_type === 'weak_evidence' ? '证据门槛不足' : openFailures.length ? '等待候选生成' : '暂无开放案例'}</small></div>
+              <div><span>候选版本</span><strong>{readyPolicy?.version || latestEvolutionRun?.candidate_version || '—'}</strong><small>{readyPolicy ? '评测通过，等待激活' : latestEvolutionRun?.candidate_version === activePolicy?.version ? '已激活为稳定版本' : '不会覆盖当前稳定版本'}</small></div>
+              <div><span>Validation 提升</span><strong>{latestEvolutionRun ? `+${Math.round(validationImprovement * 100)}%` : '—'}</strong><small>{latestEvolutionRun ? `${latestEvolutionRun.metrics.validation.candidate.accuracy * 100}% 准确率` : '基线与候选双回放'}</small></div>
+              <div><span>Holdout 非回归</span><strong>{latestEvolutionRun ? (latestEvolutionRun.decision === 'ready' ? '通过' : '拒绝') : '—'}</strong><small>{latestEvolutionRun ? `${latestEvolutionRun.metrics.holdout.candidate.recall * 100}% 召回率` : '保护未参与生成的数据'}</small></div>
+            </div>
+            <div className="evolution-actions">
+              <p><BadgeCheck size={16} />活动策略要求至少 {activePolicy?.policy?.minimum_evidence_count || 3} 条证据、{activePolicy?.policy?.minimum_non_english_evidence || 1} 条非英语证据。</p>
+              <div>
+                <button className="secondary-button" onClick={rollbackEvolutionPolicy} disabled={evolutionLoading || !activePolicy?.parent_version}><History size={15} />回滚</button>
+                {readyPolicy && <button className="secondary-button activate-policy" onClick={() => activateEvolutionPolicy(readyPolicy.version)} disabled={evolutionLoading}><ShieldCheck size={15} />激活 {readyPolicy.version}</button>}
+                <button className="primary-button compact" onClick={createEvolutionCandidate} disabled={evolutionLoading || openFailures.length === 0}>{evolutionLoading ? <LoaderCircle className="spin" size={16} /> : <Sparkles size={16} />}生成候选并评测</button>
+              </div>
             </div>
           </section>
 
