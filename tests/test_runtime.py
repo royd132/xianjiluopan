@@ -1,10 +1,13 @@
 import asyncio
 from uuid import uuid4
 
+import pytest
+
 from foresight.events import CollaborationBlackboard
 from foresight.data import MockDataProvider
 from foresight.models import CardType, ResearchRequest, ReviewRequest
-from foresight.runtime import ForesightRuntime
+from foresight.policy import DEFAULT_POLICY, evaluate_decision_cards
+from foresight.runtime import ForesightRuntime, UnsupportedResearchModeError
 
 
 def test_offline_runtime_generates_four_valid_cards(tmp_path):
@@ -64,6 +67,32 @@ def test_scenario_aware_cold_start_keeps_category_and_market_consistent(tmp_path
     asyncio.run(scenario())
 
 
+def test_runtime_rejects_unavailable_real_and_hybrid_modes(tmp_path):
+    runtime = ForesightRuntime(tmp_path / ".foresight")
+
+    for mode in ("real", "hybrid"):
+        with pytest.raises(UnsupportedResearchModeError, match="not available"):
+            runtime.create_task(ResearchRequest(category="pet feeder", market="BR", mode=mode))
+
+
+def test_mock_run_uses_structure_gate_and_discloses_unverified_evidence(tmp_path):
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(ResearchRequest(category="pet feeder", market="BR"))
+        evaluation = runtime.boards[result.task_id].read("evaluation")
+
+        assert evaluation["gate_profile"] == "mock-structure"
+        assert evaluation["verified_evidence_required"] == 0
+        assert all(not evidence.verified for card in result.cards for evidence in card.evidences)
+
+        verified_policy = {**DEFAULT_POLICY, "minimum_verified_evidence": 3}
+        verified_outcome = evaluate_decision_cards(result.cards, verified_policy)
+        assert not verified_outcome.accepted
+        assert all("insufficient verified evidence" in failure for failure in verified_outcome.failures)
+
+    asyncio.run(scenario())
+
+
 def test_rejected_card_creates_gated_policy_candidate(tmp_path):
     async def scenario():
         runtime = ForesightRuntime(tmp_path / ".foresight")
@@ -84,7 +113,7 @@ def test_rejected_card_creates_gated_policy_candidate(tmp_path):
         evolution_run = runtime.evolution.generate_candidate()
         assert evolution_run["decision"] == "ready"
         assert evolution_run["metrics"]["validation_improvement"] > 0
-        assert evolution_run["metrics"]["validation"]["candidate"]["execution_path"][1] == "production safety gate"
+        assert evolution_run["metrics"]["validation"]["candidate"]["execution_path"][1] == "shared decision gate"
         assert evolution_run["metrics"]["reproducibility"]["holdout_dataset_sha256"]
         assert (
             evolution_run["metrics"]["holdout"]["candidate"]["accuracy"]
@@ -102,6 +131,10 @@ def test_rejected_card_creates_gated_policy_candidate(tmp_path):
 
         rolled_back = runtime.evolution.rollback()
         assert rolled_back["version"] == "policy-v1"
+
+        dataset = runtime.evolution.status()["evaluation_dataset"]
+        assert dataset["source_kinds"] == ["synthetic_fixture"]
+        assert dataset["dataset_file"] == "decision_cards_v1.jsonl"
 
     asyncio.run(scenario())
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ from .policy import DEFAULT_POLICY, evaluate_decision_cards
 
 
 FIXTURE_NOW = datetime(2026, 8, 1, tzinfo=timezone.utc)
+EVALUATION_DATASET_PATH = Path(__file__).with_name("evaluation_data") / "decision_cards_v1.jsonl"
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +32,7 @@ class ReplayCase:
     split: str
     card: DecisionCard
     should_publish: bool
+    source_kind: str
 
     def fingerprint_value(self) -> dict[str, Any]:
         return {
@@ -37,6 +40,7 @@ class ReplayCase:
             "split": self.split,
             "card": self.card.model_dump(mode="json"),
             "should_publish": self.should_publish,
+            "source_kind": self.source_kind,
         }
 
 
@@ -88,16 +92,38 @@ def _replay_card(
     )
 
 
-EVALUATION_CASES = (
-    ReplayCase("val-good-1", "validation", _replay_card("val-good-1", 4, 2), True),
-    ReplayCase("val-good-2", "validation", _replay_card("val-good-2", 5, 3), True),
-    ReplayCase("val-weak-1", "validation", _replay_card("val-weak-1", 3, 1), False),
-    ReplayCase("val-bad-1", "validation", _replay_card("val-bad-1", 4, 2, hook=False), False),
-    ReplayCase("hold-good-1", "holdout", _replay_card("hold-good-1", 4, 2), True),
-    ReplayCase("hold-good-2", "holdout", _replay_card("hold-good-2", 5, 2), True),
-    ReplayCase("hold-weak-1", "holdout", _replay_card("hold-weak-1", 3, 1), False),
-    ReplayCase("hold-stale-1", "holdout", _replay_card("hold-stale-1", 4, 2, evidence_age_days=60), False),
-)
+def load_evaluation_cases(path: Path = EVALUATION_DATASET_PATH) -> tuple[ReplayCase, ...]:
+    cases: list[ReplayCase] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            split = str(payload["split"])
+            if split not in {"validation", "holdout"}:
+                raise ValueError(f"Invalid evaluation split at {path}:{line_number}")
+            case_id = str(payload["case_id"])
+            cases.append(
+                ReplayCase(
+                    case_id=case_id,
+                    split=split,
+                    card=_replay_card(
+                        case_id,
+                        int(payload["evidence_count"]),
+                        int(payload["non_english"]),
+                        hook=bool(payload.get("hook", True)),
+                        evidence_age_days=int(payload.get("evidence_age_days", 2)),
+                    ),
+                    should_publish=bool(payload["should_publish"]),
+                    source_kind=str(payload.get("source_kind", "synthetic_fixture")),
+                )
+            )
+    if not cases:
+        raise ValueError(f"Evaluation dataset is empty: {path}")
+    return tuple(cases)
+
+
+EVALUATION_CASES = load_evaluation_cases()
 
 
 class WorkflowReplayEvaluator:
@@ -152,7 +178,7 @@ class WorkflowReplayEvaluator:
             "dataset_sha256": self.dataset_fingerprint(split),
             "execution_path": [
                 "DecisionCard schema",
-                "production safety gate",
+                "shared decision gate",
                 "publish-or-reject decision",
             ],
         }
@@ -302,7 +328,7 @@ class EvolutionEngine:
                     ),
                 },
                 "reproducibility": {
-                    "evaluation_schema_version": 3,
+                    "evaluation_schema_version": 4,
                     "validation_dataset_sha256": self.evaluator.dataset_fingerprint("validation"),
                     "holdout_dataset_sha256": self.evaluator.dataset_fingerprint("holdout"),
                     "candidate_policy_sha256": hashlib.sha256(
@@ -346,8 +372,11 @@ class EvolutionEngine:
             "policy_versions": self.memory.list_policies(),
             "evolution_runs": self.memory.list_evolution_runs(),
             "evaluation_dataset": {
-                "schema_version": 3,
-                "execution_path": "DecisionCard -> production safety gate -> publish/reject",
+                "schema_version": 4,
+                "dataset_file": EVALUATION_DATASET_PATH.name,
+                "source_kinds": sorted({case.source_kind for case in EVALUATION_CASES}),
+                "claim_boundary": "synthetic replay fixture; not merchant outcome data",
+                "execution_path": "DecisionCard -> shared decision gate -> publish/reject",
                 "validation": sum(case.split == "validation" for case in EVALUATION_CASES),
                 "holdout": sum(case.split == "holdout" for case in EVALUATION_CASES),
                 "validation_sha256": self.evaluator.dataset_fingerprint("validation"),

@@ -1499,7 +1499,7 @@ class AdaptiveThresholdManager:
 | "数据从哪来？准确吗？" | 公开数据（GT/Reddit/UN Comtrade/FBX/平台页）；三级标注（✅已核实/⚠️假设/❌不引用）；冷启动用伪数据保证Demo稳定 |
 | "和Jungle Scout有什么不同？" | 它们停在"描述性"（发生了什么）；我们跳到"处方性"（该怎么办）；加上私域落点和可证伪性是结构性差异 |
 | "自进化怎么证明不是画饼？" | MVP即内置Layer1（反馈收集）+ Layer2（记忆更新）；Layer3（SFT/RL）标注为赛后演进；Demo可展示"采纳→沉淀→下次更准"的闭环 |
-| "冷启动数据不是造假吗？" | 明确标注mock模式；伪数据基于真实分布生成（非随机）；一键切换real模式即可接入真实数据 |
+| "冷启动数据不是造假吗？" | 明确标注 Mock 模式；确定性场景数据仅用于复现流程；Real Provider 未安装时接口直接拒绝请求，不会把 Mock 降级结果标成真实数据 |
 | "Harness这么重，MVP做得完吗？" | Pico证明了Harness在单人项目中的可行性；我们取其核心4模块（上下文/记忆/Checkpoint/安全），非全量；MVP 2-3周可完成核心 |
 | "零算力怎么跑Agent？" | 全链路免费层：Gemini免费API + Chroma本地 + Streamlit本地；唯一成本是开发者时间；Demo完全离线可跑（mock模式） |
 

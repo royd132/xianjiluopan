@@ -9,6 +9,7 @@ from .models import DecisionCard
 
 DEFAULT_POLICY: dict[str, Any] = {
     "minimum_evidence_count": 3,
+    "minimum_verified_evidence": 0,
     "minimum_non_english_evidence": 1,
     "require_private_domain_hook": True,
     "require_failure_condition": True,
@@ -37,9 +38,12 @@ def evaluate_decision_cards(
     adjusted: list[DecisionCard] = []
     checks = 0
     for card in cards:
-        checks += 5
+        checks += 6
         if len(card.evidences) < int(policy["minimum_evidence_count"]):
             failures.append(f"{card.card_id}: missing evidence")
+        verified_count = sum(evidence.verified for evidence in card.evidences)
+        if verified_count < int(policy.get("minimum_verified_evidence", 0)):
+            failures.append(f"{card.card_id}: insufficient verified evidence")
         if policy["require_private_domain_hook"] and not card.private_domain_hook.hook_message:
             failures.append(f"{card.card_id}: missing private domain hook")
         if policy["require_failure_condition"] and not card.failure_conditions:

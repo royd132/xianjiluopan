@@ -32,10 +32,15 @@ from .models import (
 )
 
 
+class UnsupportedResearchModeError(ValueError):
+    """Raised when a request asks for a data mode with no installed provider."""
+
+
 class ForesightRuntime:
     """Event-driven coordinator backed by a resumable node runtime."""
 
     workflow_version = "foresight-workflow-v2"
+    supported_modes = frozenset({"mock"})
 
     def __init__(self, workdir: Path | str = ".foresight") -> None:
         self.harness = AgentHarness(workdir)
@@ -129,6 +134,7 @@ class ForesightRuntime:
                 )
 
     def create_task(self, request: ResearchRequest) -> str:
+        self._validate_request_mode(request)
         task_id = str(uuid4())
         board = CollaborationBlackboard(task_id)
         self.boards[task_id] = board
@@ -148,6 +154,7 @@ class ForesightRuntime:
         if not checkpoint:
             raise ValueError("No checkpoint is available for this task")
         request = ResearchRequest.model_validate(run["request"])
+        self._validate_request_mode(request)
         board = self._board_from_checkpoint(task_id, checkpoint)
         self.boards[task_id] = board
         self.tasks[task_id] = asyncio.create_task(
@@ -164,6 +171,15 @@ class ForesightRuntime:
     async def run(self, request: ResearchRequest) -> ResearchResult:
         task_id = self.create_task(request)
         return await self.tasks[task_id]
+
+    def _validate_request_mode(self, request: ResearchRequest) -> None:
+        if request.mode in self.supported_modes:
+            return
+        supported = ", ".join(sorted(self.supported_modes))
+        raise UnsupportedResearchModeError(
+            f"Research mode '{request.mode}' is not available. "
+            f"Installed providers support: {supported}."
+        )
 
     def _serialize_snapshot(self, board: CollaborationBlackboard) -> dict[str, Any]:
         def serialize(value: Any) -> Any:
@@ -281,6 +297,7 @@ class ForesightRuntime:
         trace_id: str | None = None,
         resumed: bool = False,
     ) -> ResearchResult:
+        self._validate_request_mode(request)
         started_at = datetime.now(timezone.utc)
         trace_id = trace_id or self.harness.new_trace_id()
         existing_run = self.harness.runs.get_run(task_id)
@@ -436,6 +453,7 @@ class ForesightRuntime:
         return {
             "runtime_version": self.harness.runtime_version,
             "workflow_version": self.workflow_version,
+            "supported_modes": sorted(self.supported_modes),
             "plugins": self.harness.plugins.list(),
         }
 

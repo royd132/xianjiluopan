@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
+import secrets
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .data import MockDataProvider
 from .models import ProviderReloadRequest, ResearchRequest, ReviewRequest
-from .runtime import ForesightRuntime
+from .runtime import ForesightRuntime, UnsupportedResearchModeError
 
 
 app = FastAPI(
@@ -34,6 +37,21 @@ app.add_middleware(
 runtime = ForesightRuntime(Path(".foresight"))
 
 
+def require_admin_access(
+    x_admin_token: Annotated[str | None, Header(alias="X-Admin-Token")] = None,
+) -> None:
+    if os.getenv("FORESIGHT_DEMO_READ_ONLY", "").lower() in {"1", "true", "yes", "on"}:
+        raise HTTPException(status_code=403, detail="This deployment is configured as read-only")
+    configured_token = os.getenv("FORESIGHT_ADMIN_TOKEN")
+    if configured_token and (
+        x_admin_token is None or not secrets.compare_digest(x_admin_token, configured_token)
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="A valid X-Admin-Token header is required",
+        )
+
+
 @app.get("/api/v1/health")
 async def health() -> dict:
     return {
@@ -42,6 +60,14 @@ async def health() -> dict:
         "harness": runtime.harness.runtime_version,
         "policy_version": runtime.evolution.active_policy()["version"],
         "extension_count": len(runtime.harness.plugins.list()),
+        "supported_modes": sorted(runtime.supported_modes),
+        "mutation_protection": (
+            "read-only"
+            if os.getenv("FORESIGHT_DEMO_READ_ONLY", "").lower() in {"1", "true", "yes", "on"}
+            else "token"
+            if os.getenv("FORESIGHT_ADMIN_TOKEN")
+            else "local-demo-open"
+        ),
         "mode": "offline-ready",
     }
 
@@ -52,7 +78,10 @@ async def runtime_extensions() -> dict:
 
 
 @app.post("/api/v1/runtime/providers/mock/reload")
-async def reload_mock_provider(request: ProviderReloadRequest) -> dict:
+async def reload_mock_provider(
+    request: ProviderReloadRequest,
+    _admin: None = Depends(require_admin_access),
+) -> dict:
     try:
         plugin = runtime.install_provider(MockDataProvider(), request.version)
     except ValueError as exc:
@@ -65,7 +94,7 @@ async def reload_mock_provider(request: ProviderReloadRequest) -> dict:
 
 
 @app.post("/api/v1/runtime/providers/mock/rollback")
-async def rollback_mock_provider() -> dict:
+async def rollback_mock_provider(_admin: None = Depends(require_admin_access)) -> dict:
     try:
         plugin = runtime.rollback_provider("global")
     except KeyError as exc:
@@ -81,7 +110,10 @@ async def rollback_mock_provider() -> dict:
 
 @app.post("/api/v1/research", status_code=202)
 async def create_research(request: ResearchRequest) -> dict:
-    task_id = runtime.create_task(request)
+    try:
+        task_id = runtime.create_task(request)
+    except UnsupportedResearchModeError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
     return {"task_id": task_id, "status": "running", "events_url": f"/api/v1/research/{task_id}/events"}
 
 
@@ -136,7 +168,10 @@ async def research_component_snapshot(task_id: str) -> dict:
 
 
 @app.post("/api/v1/research/{task_id}/cancel")
-async def cancel_research(task_id: str) -> dict:
+async def cancel_research(
+    task_id: str,
+    _admin: None = Depends(require_admin_access),
+) -> dict:
     try:
         runtime.cancel_task(task_id)
     except KeyError as exc:
@@ -145,7 +180,10 @@ async def cancel_research(task_id: str) -> dict:
 
 
 @app.post("/api/v1/research/{task_id}/resume", status_code=202)
-async def resume_research(task_id: str) -> dict:
+async def resume_research(
+    task_id: str,
+    _admin: None = Depends(require_admin_access),
+) -> dict:
     try:
         runtime.resume_task(task_id)
     except KeyError as exc:
@@ -156,7 +194,11 @@ async def resume_research(task_id: str) -> dict:
 
 
 @app.post("/api/v1/cards/{card_id}/review")
-async def review_card(card_id: str, review: ReviewRequest) -> dict:
+async def review_card(
+    card_id: str,
+    review: ReviewRequest,
+    _admin: None = Depends(require_admin_access),
+) -> dict:
     try:
         feedback = runtime.review_card(card_id, review)
     except KeyError as exc:
@@ -170,7 +212,7 @@ async def evolution_status() -> dict:
 
 
 @app.post("/api/v1/evolution/candidates", status_code=201)
-async def create_evolution_candidate() -> dict:
+async def create_evolution_candidate(_admin: None = Depends(require_admin_access)) -> dict:
     try:
         return runtime.evolution.generate_candidate()
     except ValueError as exc:
@@ -178,7 +220,10 @@ async def create_evolution_candidate() -> dict:
 
 
 @app.post("/api/v1/evolution/policies/{version}/activate")
-async def activate_evolution_policy(version: str) -> dict:
+async def activate_evolution_policy(
+    version: str,
+    _admin: None = Depends(require_admin_access),
+) -> dict:
     try:
         return runtime.evolution.activate(version)
     except KeyError as exc:
@@ -188,7 +233,7 @@ async def activate_evolution_policy(version: str) -> dict:
 
 
 @app.post("/api/v1/evolution/rollback")
-async def rollback_evolution_policy() -> dict:
+async def rollback_evolution_policy(_admin: None = Depends(require_admin_access)) -> dict:
     try:
         return runtime.evolution.rollback()
     except ValueError as exc:

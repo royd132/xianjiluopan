@@ -9,7 +9,7 @@
 
 - Runtime Core 负责节点状态、重试、取消、Checkpoint、Run Ledger 和恢复；
 - Extension Plane 负责 Provider、Tool、Evaluator 和 Policy Pack 的可逆装配；
-- Evolution Plane 负责失败案例、候选生成、真实决策卡回放、激活和回滚；
+- Evolution Plane 负责失败案例、候选生成、外置合成决策卡回放、激活和回滚；
 - Agent Graph 保留稳定的市场洞察业务流程，不在运行中替换核心状态机。
 
 ## 2. 总体架构
@@ -22,7 +22,7 @@ flowchart TB
     EXT[Extension Plane] --> SNAP
     POLICY[Active Policy] --> SNAP
     GRAPH --> CARDS[Decision Cards]
-    CARDS --> GATE[Production Safety Gate]
+    CARDS --> GATE[Layered Decision Gate]
     GATE --> LEDGER[(Append-only Run Ledger)]
     CARDS --> HITL[Human Review]
     HITL --> FAIL[Failure Cases]
@@ -114,22 +114,22 @@ flowchart LR
 
 SQLite 使用 WAL 和 `synchronous=NORMAL`，任务期间复用已打开连接并逐次提交，任务结束后关闭连接，兼顾运行状态可见性和 Windows 文件句柄安全。
 
-## 7. 真实决策卡回放
+## 7. 完整结构化决策卡回放
 
-v2 使用汇总后的布尔字段模拟发布判断。v3 改为构造完整的：
+v2 使用汇总后的布尔字段模拟发布判断。v3 从 `evaluation_data/decision_cards_v1.jsonl` 加载外置合成案例，再构造完整的：
 
 - `DecisionCard`
 - `EvidenceItem`
 - `PrivateDomainHook`
 - `FailureCondition`
 
-然后调用线上 `SafetyEvaluationAgent` 使用的同一个 `evaluate_decision_cards()` 生产门禁：
+然后调用运行时 `SafetyEvaluationAgent` 共享的 `evaluate_decision_cards()` 决策门禁：
 
 ```text
-DecisionCard Schema -> Production Safety Gate -> Publish / Reject
+DecisionCard Schema -> Shared Decision Gate -> Publish / Reject
 ```
 
-Validation 保留逐案例结果，Holdout 只返回聚合指标。每次演进记录候选策略、基线策略和两个数据分区的 SHA-256，便于复现。
+Validation 保留逐案例结果，Holdout 只返回聚合指标。每次演进记录候选策略、基线策略和两个数据分区的 SHA-256，便于复现。当前数据集明确标记为 `synthetic_fixture`，用于证明门禁与版本治理，不宣称代表真实商家经营效果。
 
 候选只有同时满足以下条件才进入 `ready`：
 

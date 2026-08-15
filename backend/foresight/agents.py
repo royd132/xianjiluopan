@@ -174,12 +174,42 @@ class SafetyEvaluationAgent(BaseAgent):
         cards: list[DecisionCard] = board.read("decision_cards_draft", [])
         policy_snapshot = harness.policy_for_task(board.task_id)
         policy = dict(policy_snapshot.get("policy") or DEFAULT_POLICY)
+        gate_profile = "mock-structure"
+        if request.mode != "mock":
+            gate_profile = "verified-evidence"
+            policy["minimum_verified_evidence"] = max(
+                int(policy.get("minimum_verified_evidence", 0)),
+                int(policy["minimum_evidence_count"]),
+            )
         outcome = evaluate_decision_cards(cards, policy)
         if not outcome.accepted:
             raise ValueError("Decision gate rejected cards: " + "; ".join(outcome.failures))
         await board.publish_artifact("decision_cards", outcome.cards, self.name)
-        await board.publish_artifact("evaluation", {"passed": True, "score": 0.91, "checks": outcome.checks, "policy_version": policy_snapshot.get("version", "embedded-default")}, self.name)
-        await board.publish_event(RuntimeEvent(EventType.GATE_PASSED, board.task_id, self.name, "All decision cards passed the HITL preflight gate", {"cards": len(outcome.cards), "policy_version": policy_snapshot.get("version", "embedded-default")}))
+        await board.publish_artifact(
+            "evaluation",
+            {
+                "passed": True,
+                "score": 0.91,
+                "checks": outcome.checks,
+                "gate_profile": gate_profile,
+                "verified_evidence_required": policy.get("minimum_verified_evidence", 0),
+                "policy_version": policy_snapshot.get("version", "embedded-default"),
+            },
+            self.name,
+        )
+        await board.publish_event(
+            RuntimeEvent(
+                EventType.GATE_PASSED,
+                board.task_id,
+                self.name,
+                f"All decision cards passed the {gate_profile} gate",
+                {
+                    "cards": len(outcome.cards),
+                    "gate_profile": gate_profile,
+                    "policy_version": policy_snapshot.get("version", "embedded-default"),
+                },
+            )
+        )
 
 
 async def run_parallel(agents: list[BaseAgent], request: ResearchRequest, board: CollaborationBlackboard, harness: AgentHarness, trace_id: str) -> None:

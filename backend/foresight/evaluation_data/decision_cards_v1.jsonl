@@ -1,0 +1,8 @@
+{"case_id":"val-good-1","split":"validation","source_kind":"synthetic_fixture","evidence_count":4,"non_english":2,"hook":true,"evidence_age_days":2,"should_publish":true}
+{"case_id":"val-good-2","split":"validation","source_kind":"synthetic_fixture","evidence_count":5,"non_english":3,"hook":true,"evidence_age_days":2,"should_publish":true}
+{"case_id":"val-weak-1","split":"validation","source_kind":"synthetic_fixture","evidence_count":3,"non_english":1,"hook":true,"evidence_age_days":2,"should_publish":false}
+{"case_id":"val-bad-1","split":"validation","source_kind":"synthetic_fixture","evidence_count":4,"non_english":2,"hook":false,"evidence_age_days":2,"should_publish":false}
+{"case_id":"hold-good-1","split":"holdout","source_kind":"synthetic_fixture","evidence_count":4,"non_english":2,"hook":true,"evidence_age_days":2,"should_publish":true}
+{"case_id":"hold-good-2","split":"holdout","source_kind":"synthetic_fixture","evidence_count":5,"non_english":2,"hook":true,"evidence_age_days":2,"should_publish":true}
+{"case_id":"hold-weak-1","split":"holdout","source_kind":"synthetic_fixture","evidence_count":3,"non_english":1,"hook":true,"evidence_age_days":2,"should_publish":false}
+{"case_id":"hold-stale-1","split":"holdout","source_kind":"synthetic_fixture","evidence_count":4,"non_english":2,"hook":true,"evidence_age_days":60,"should_publish":false}

@@ -59,7 +59,7 @@
 | 业务痛点 | 常见做法 | 先机罗盘 |
 |---|---|---|
 | 数据分散 | 在趋势、平台、评论、海关和物流网站间切换 | Collector Agent 统一采集并形成事实层 |
-| 非英语评论难利用 | 先翻译再做简单情感分析 | Review Agent 直接分析原语让步结构 |
+| 非英语评论难利用 | 先翻译再做简单情感分析 | Review Agent 保留原语让步结构；当前 Mock 复现结构化结果，真实语义模型通过 Adapter 接入 |
 | 指标不能直接行动 | 人工拼装选品、定价和营销判断 | Decision Compiler 生成四类行动卡 |
 | AI 建议像黑盒 | 只看到结论，无法核查来源 | 每张卡绑定证据、时间和置信度 |
 | 报告很快过期 | 依靠人重新查询 | 当前登记反向条件；真实 Provider 接入后按快照变化触发重算 |
@@ -140,11 +140,11 @@ flowchart TB
 | Agent | 责任 | 主要产物 |
 |---|---|---|
 | Collector Agent | 采集趋势、评论、价格、贸易和运价数据 | 原始市场数据、证据对象 |
-| Multilingual Review Agent | 直接分析原语评论中的让步结构与隐性痛点 | 痛点簇、原文引用 |
+| Multilingual Review Agent | 保留原语评论并抽取让步结构；Mock 模式复现预置分析结果 | 痛点簇、原文引用 |
 | Market Analysis Agent | 计算价格分位、竞争密度和机会指标 | 结构化市场指标 |
 | Supply Chain Agent | 计算贸易、运价和汇率领先信号 | 供应链风险与阈值状态 |
-| Decision Compiler Agent | 将已验证事实编译为四类行动卡 | 决策卡草稿 |
-| Safety & Evaluation Agent | 校验证据、非英语来源、私域字段和反向条件 | 通过或拒绝输出 |
+| Decision Compiler Agent | 将带模式标识的证据编译为四类行动卡 | 决策卡草稿 |
+| Safety & Evaluation Agent | Mock 校验结构完整性；真实模式还必须校验证据核实状态 | 通过或拒绝输出 |
 
 Runtime 采用分阶段并行：采集完成后，评论分析、市场分析和供应链分析并行工作；随后决策编译与安全评测依次完成。Agent 通过黑板发布 Artifact 和事件，不直接相互调用。
 
@@ -170,10 +170,10 @@ Runtime 采用分阶段并行：采集完成后，评论分析、市场分析和
 | Effect Stack | 注册副作用逆序撤销 | 插件安装失败或回滚时自动清理 |
 | Capability Guard | 单调权限拒绝 | 局部插件不能恢复已禁止工具 |
 | Component Snapshot | 插件、工具和策略版本 SHA-256 | 热更新只影响新任务，旧任务可复现和恢复 |
-| Evaluation Gate | Pydantic + 规则 | 缺证据、私域钩子或失效条件时拒绝输出 |
-| Policy Evolution | 完整 DecisionCard 双分区回放 | 候选经过生产 Safety Gate 后才能激活 |
+| Evaluation Gate | Pydantic + 分层规则 | Mock 走结构门禁；真实模式增加已核实证据门禁 |
+| Policy Evolution | 外置合成 DecisionCard 双分区回放 | 候选经过共享门禁后才能人工激活 |
 
-Provider 更新采用 `staging -> health check -> activate`，旧 generation 保留给已启动任务。服务重启时 Runtime 按组件快照重建所需 generation，当前活动 Provider 版本也会持久化。自进化飞轮则完成反馈收集、失败案例沉淀、候选策略生成、真实决策卡 Validation/Holdout 回放、人工激活与版本回滚。
+Provider 更新采用 `staging -> health check -> activate`，旧 generation 保留给已启动任务。服务重启时 Runtime 按组件快照重建所需 generation，当前活动 Provider 版本也会持久化。自进化飞轮完成反馈收集、失败案例沉淀、候选策略生成、外置合成决策卡 Validation/Holdout 回放、人工激活与版本回滚；商家审核案例尚在试点阶段积累。
 
 ## 🚀 快速开始
 
@@ -220,6 +220,16 @@ npm.cmd run dev -- --port 4173
 ```
 
 前端会自动检测后端：连接成功时消费真实 SSE 事件；后端未启动时自动降级为本地演示模式。
+
+公开部署时建议保护所有运行时变更接口：
+
+```powershell
+$env:FORESIGHT_ADMIN_TOKEN="replace-with-a-secret"
+# 或将演示环境设为完全只读
+$env:FORESIGHT_DEMO_READ_ONLY="true"
+```
+
+启用令牌后，Provider 更新、任务取消/恢复、卡片复核和策略演进请求必须携带 `X-Admin-Token`。研究任务创建与只读查询保持可用。
 
 ## 🔌 API 与离线 CLI
 
@@ -359,8 +369,8 @@ npm.cmd run build
 | 模式 | 状态 | 说明 |
 |---|---|---|
 | `mock` | 已实现 | 品类画像 × 市场画像的确定性冷启动，适合 Demo、测试和无网络运行 |
-| `hybrid` | 接口已预留 | 部分真实数据与明确标记的 Mock 数据组合 |
-| `real` | Provider 待接入 | 官方、公开或授权数据源 |
+| `hybrid` | Schema 已预留，运行时未开放 | Provider 未安装前请求返回 `501`，不会降级后冒充混合结果 |
+| `real` | Schema 已预留，运行时未开放 | 官方、公开或授权 Provider 未安装前请求返回 `501` |
 
 Mock 数据不会冒充真实发现。页面、API 和导出结果均披露数据模式。
 
@@ -370,7 +380,7 @@ Mock 数据不会冒充真实发现。页面、API 和导出结果均披露数�
 
 - Layer 1：采纳、驳回、待议等运行时反馈收集；
 - Layer 2：正向/负向案例写入长期记忆，为后续检索与评测提供数据。
-- Layer 3a：版本化策略候选、完整 DecisionCard Validation/Holdout 回放、人工激活与父版本回滚。
+- Layer 3a：版本化策略候选、外置合成 DecisionCard Validation/Holdout 回放、人工激活与父版本回滚。
 
 Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的模型演进路线，不会在没有合规样本的情况下伪装成已经完成的能力。
 
@@ -394,7 +404,7 @@ Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的�
 - [x] DSH 式 Effect Stack、作用域 Registry 与单调权限 Guard
 - [x] Provider 热更新、任务级组件快照与跨重启 generation 恢复
 - [x] 场景化多品类 × 多市场 Mock 冷启动
-- [x] 完整 DecisionCard 生产门禁回放与数据指纹
+- [x] 外置合成 DecisionCard 共享门禁回放与数据指纹
 - [x] Docker 与 CI
 - [ ] Google Trends / UN Comtrade 真实 Provider
 - [ ] 定时市场快照、变化检测与阈值告警
