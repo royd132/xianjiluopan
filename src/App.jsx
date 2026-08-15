@@ -38,6 +38,8 @@ import {
 } from 'lucide-react';
 import productImage from './assets/pet-feeder.png';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const markets = [
   { code: 'BR', name: '巴西', flag: 'BR' },
   { code: 'US', name: '美国', flag: 'US' },
@@ -46,37 +48,37 @@ const markets = [
 ];
 
 const agents = [
-  { label: '市场采集', detail: '217 条葡语评论已采集', icon: Globe2 },
-  { label: '痛点分析', detail: '识别 6 类隐性痛点', icon: MessageCircleMore },
-  { label: '供应链校验', detail: '关联 3 组领先信号', icon: Activity },
+  { label: '市场采集', detail: '趋势 / 评论 / 价格 / 贸易信号', icon: Globe2 },
+  { label: '痛点分析', detail: '原语让步结构已聚类', icon: MessageCircleMore },
+  { label: '供应链校验', detail: '贸易 / 运价 / 汇率已校验', icon: Activity },
   { label: '策略编译', detail: '通过可信度闸门', icon: Sparkles },
 ];
 
-const evidence = [
+const demoEvidence = [
   {
     source: 'Google Trends · Brazil',
     type: '趋势',
     claim: '“pet feeder”近 90 天搜索热度上升',
     value: '+64%',
-    verified: true,
+    verified: false,
   },
   {
     source: 'Amazon Brasil · 217 条葡语评论',
     type: '评论',
     claim: '“喜欢，但夜间噪音大”集中出现',
     value: '38%',
-    verified: true,
+    verified: false,
   },
   {
     source: 'UN Comtrade · HS 8509',
     type: '海关',
     claim: '巴西相关品类进口额同比增长',
     value: '+41%',
-    verified: true,
+    verified: false,
   },
 ];
 
-const cards = [
+const demoCards = [
   {
     id: 'product',
     type: '选品方向',
@@ -144,9 +146,9 @@ function mapRuntimeCards(runtimeCards) {
     const presentation = cardPresentation[card.card_type];
     const data = card.card_specific_data || {};
     let metricValue = '—';
-    if (card.card_type === 'product_selection') metricValue = String(Math.round((data.blue_ocean_index || 0.86) * 10) / 10);
+    if (card.card_type === 'product_selection') metricValue = String(Math.round((data.blue_ocean_index || 0.86) * 100) / 10);
     if (card.card_type === 'pricing') metricValue = `${data.gross_margin_pct || 31}%`;
-    if (card.card_type === 'competitive') metricValue = '72%';
+    if (card.card_type === 'competitive') metricValue = `${data.expression_gap_pct || 72}%`;
     if (card.card_type === 'private_domain') metricValue = data.repurchase_signal_strength === 'strong' ? '强' : '中';
     return {
       ...presentation,
@@ -166,7 +168,61 @@ function mapRuntimeCards(runtimeCards) {
   });
 }
 
-const painPoints = [
+const evidenceTypeLabels = { trend: '趋势', review: '评论', customs: '海关', freight: '运价', price: '竞品价格', social: '社媒' };
+const painPositions = [
+  { x: 18, y: 22, size: 58, color: '#2563eb' },
+  { x: 48, y: 42, size: 43, color: '#059669' },
+  { x: 72, y: 51, size: 38, color: '#d97706' },
+  { x: 84, y: 67, size: 32, color: '#7c3aed' },
+  { x: 37, y: 73, size: 26, color: '#64748b' },
+];
+
+function mapRuntimeEvidence(runtimeCards) {
+  const seen = new Set();
+  return runtimeCards.flatMap((card) => card.evidences || []).filter((item) => {
+    if (seen.has(item.evidence_id)) return false;
+    seen.add(item.evidence_id);
+    return true;
+  }).map((item) => ({
+    source: item.source_name,
+    type: evidenceTypeLabels[item.source_type] || item.source_type,
+    claim: item.claim,
+    value: item.raw_value,
+    verified: item.verified,
+    url: item.url,
+  }));
+}
+
+function mapRuntimePainPoints(items) {
+  return items.map((item, index) => ({
+    id: item.pain_type,
+    label: item.label,
+    value: Math.round(item.opportunity_index * 100),
+    count: item.mentions,
+    ...painPositions[index % painPositions.length],
+  }));
+}
+
+function mapRuntimeReviews(items, marketName) {
+  return Object.fromEntries(items.map((item) => [item.pain_type, {
+    original: item.sample_original,
+    translation: item.sample_translation,
+    meta: `${item.languages.join(' / ')} · ${marketName} · Mock 原语样本`,
+  }]));
+}
+
+function mapRuntimeSupplySignals(items) {
+  const bars = [[24, 32, 29, 41, 46, 58, 66], [32, 27, 38, 34, 44, 49, 53], [45, 43, 47, 42, 44, 46, 45]];
+  return items.map((item, index) => ({
+    name: item.label,
+    value: item.signal_type === 'fx' ? String(item.current_value) : `${item.change_pct >= 0 ? '+' : ''}${item.change_pct}%`,
+    note: item.period,
+    state: item.status,
+    bars: bars[index % bars.length],
+  }));
+}
+
+const demoPainPoints = [
   { id: 'noise', label: '夜间噪音', value: 88, count: 82, x: 18, y: 22, size: 58, color: '#2563eb' },
   { id: 'clean', label: '清洗困难', value: 69, count: 47, x: 48, y: 42, size: 43, color: '#059669' },
   { id: 'jam', label: '容易卡粮', value: 61, count: 38, x: 72, y: 51, size: 38, color: '#d97706' },
@@ -174,35 +230,35 @@ const painPoints = [
   { id: 'wifi', label: '联网不稳', value: 35, count: 18, x: 37, y: 73, size: 26, color: '#64748b' },
 ];
 
-const reviews = {
+const demoReviews = {
   noise: {
     original: 'Adoro o alimentador, mas o motor faz muito barulho durante a madrugada.',
     translation: '我很喜欢这个喂食器，但电机在半夜运行时声音很大。',
-    meta: '葡萄牙语 · 巴西 · 已验证购买',
+    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
   },
   clean: {
     original: 'Ótimo produto, porém desmontar para limpar dá muito trabalho.',
     translation: '产品很好，不过拆开清洗非常麻烦。',
-    meta: '葡萄牙语 · 巴西 · 已验证购买',
+    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
   },
   jam: {
     original: 'Funciona bem, mas a ração trava quando os grãos são maiores.',
     translation: '运行不错，但颗粒稍大时就会卡粮。',
-    meta: '葡萄牙语 · 巴西 · 已验证购买',
+    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
   },
   portion: {
     original: 'Gosto do aplicativo, mas a porção nunca parece igual.',
     translation: '我喜欢它的应用，但每次出粮量看起来都不一样。',
-    meta: '葡萄牙语 · 巴西 · 已验证购买',
+    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
   },
   wifi: {
     original: 'É bonito, porém perde a conexão com frequência.',
     translation: '外观很好看，但经常断开连接。',
-    meta: '葡萄牙语 · 巴西 · 已验证购买',
+    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
   },
 };
 
-const supplySignals = [
+const demoSupplySignals = [
   { name: '巴西进口需求', value: '+41%', note: '同比', state: 'positive', bars: [24, 32, 29, 41, 46, 58, 66] },
   { name: '南美海运 FBX', value: '+6.2%', note: '近 30 天', state: 'watch', bars: [32, 27, 38, 34, 44, 49, 53] },
   { name: 'USD / BRL', value: '5.43', note: '稳定区间', state: 'stable', bars: [45, 43, 47, 42, 44, 46, 45] },
@@ -214,6 +270,12 @@ function MiniBars({ values, state }) {
       {values.map((v, index) => <span key={index} style={{ height: `${v}%` }} />)}
     </div>
   );
+}
+
+function formatReportTime(value) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(value));
 }
 
 function ScoreRing({ value, size = 42 }) {
@@ -237,7 +299,15 @@ function App() {
   const [activeNav, setActiveNav] = useState('workspace');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
-  const [decisionCards, setDecisionCards] = useState(cards);
+  const [decisionCards, setDecisionCards] = useState(demoCards);
+  const [reportEvidence, setReportEvidence] = useState(demoEvidence);
+  const [insightPainPoints, setInsightPainPoints] = useState(demoPainPoints);
+  const [insightReviews, setInsightReviews] = useState(demoReviews);
+  const [insightSupplySignals, setInsightSupplySignals] = useState(demoSupplySignals);
+  const [reportCategory, setReportCategory] = useState('宠物自动喂食器');
+  const [reportMarket, setReportMarket] = useState('BR');
+  const [reportGeneratedAt, setReportGeneratedAt] = useState(new Date().toISOString());
+  const [reportMode, setReportMode] = useState('mock-offline');
   const [runtimeState, setRuntimeState] = useState('checking');
   const [runtimeMessage, setRuntimeMessage] = useState('正在检测多 Agent Runtime');
   const [evolution, setEvolution] = useState(null);
@@ -246,10 +316,18 @@ function App() {
   const eventSourceRef = useRef(null);
 
   const selectedMarket = useMemo(() => markets.find((item) => item.code === market), [market]);
+  const selectedReportMarket = useMemo(() => markets.find((item) => item.code === reportMarket), [reportMarket]);
+  const selectedReview = insightReviews[selectedPain] || Object.values(insightReviews)[0];
+  const pricingFailure = decisionCards.find((card) => card.id === 'pricing')?.failureConditions?.[0];
+  const productDecision = decisionCards.find((card) => card.id === 'product') || demoCards[0];
+  const competitiveDecision = decisionCards.find((card) => card.id === 'competitive') || demoCards[2];
+  const opportunityScore = Math.round(Number(decisionCards.find((card) => card.id === 'product')?.metricValue || 8.6) * 10);
+  const leadPain = insightPainPoints[0] || demoPainPoints[0];
+  const demandSignal = insightSupplySignals[0] || demoSupplySignals[0];
 
   const loadEvolution = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/evolution');
+      const response = await fetch(`${API_BASE_URL}/api/v1/evolution`);
       if (!response.ok) throw new Error('evolution unavailable');
       setEvolution(await response.json());
     } catch {
@@ -281,7 +359,7 @@ function App() {
   }, [running, runtimeState]);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/v1/health')
+    fetch(`${API_BASE_URL}/api/v1/health`)
       .then((response) => {
         if (!response.ok) throw new Error('runtime unavailable');
         return response.json();
@@ -300,15 +378,35 @@ function App() {
 
   const runLocalFallback = () => {
     setRuntimeState('offline');
-    setRuntimeMessage('后端未启动，使用离线演示');
+    setRuntimeMessage('后端未启动，使用巴西宠物喂食器固定样例');
+    setDecisionCards(demoCards);
+    setReportEvidence(demoEvidence);
+    setInsightPainPoints(demoPainPoints);
+    setInsightReviews(demoReviews);
+    setInsightSupplySignals(demoSupplySignals);
+    setReportCategory('宠物自动喂食器');
+    setReportMarket('BR');
+    setReportGeneratedAt(new Date().toISOString());
+    setReportMode('mock-offline');
+    setSelectedPain('noise');
+    if (query !== '宠物自动喂食器' || market !== 'BR') setToast('离线固定样例已载入；启动后端可运行多品类、多市场冷启动');
     setRunning(true);
   };
 
   const loadRuntimeResult = async (taskId) => {
-    const response = await fetch(`http://localhost:8000/api/v1/research/${taskId}`);
+    const response = await fetch(`${API_BASE_URL}/api/v1/research/${taskId}`);
     const payload = await response.json();
     if (payload.result?.cards) {
       setDecisionCards(mapRuntimeCards(payload.result.cards));
+      setReportEvidence(mapRuntimeEvidence(payload.result.cards));
+      setInsightPainPoints(mapRuntimePainPoints(payload.result.pain_points));
+      setInsightReviews(mapRuntimeReviews(payload.result.pain_points, markets.find((item) => item.code === payload.result.request.market)?.name || payload.result.request.market));
+      setInsightSupplySignals(mapRuntimeSupplySignals(payload.result.supply_signals));
+      setReportCategory(payload.result.request.category);
+      setReportMarket(payload.result.request.market);
+      setReportGeneratedAt(payload.result.completed_at);
+      setReportMode(payload.result.mode);
+      setSelectedPain(payload.result.pain_points[0]?.pain_type || 'noise');
       setRuntimeMessage(`6 个 Agent 已完成 · Trace ${payload.result.trace_id.slice(0, 8)}`);
     }
     setAgentStep(agents.length);
@@ -318,7 +416,7 @@ function App() {
 
   const connectRuntimeEvents = (taskId) => {
     eventSourceRef.current?.close();
-    const source = new EventSource(`http://localhost:8000/api/v1/research/${taskId}/events`);
+    const source = new EventSource(`${API_BASE_URL}/api/v1/research/${taskId}/events`);
     eventSourceRef.current = source;
     let completedAgents = 0;
     source.addEventListener('agent.started', (event) => {
@@ -355,7 +453,7 @@ function App() {
     setAgentStep(0);
     setRunning(true);
     try {
-      const response = await fetch('http://localhost:8000/api/v1/research', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/research`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category: query, market, mode: 'mock', languages: ['pt', 'en', 'es'] }),
@@ -381,18 +479,19 @@ function App() {
 
   const exportReport = () => {
     const payload = {
-      product: query,
-      market: selectedMarket,
-      generatedAt: '2026-08-13T14:20:00+08:00',
+      product: reportCategory,
+      market: selectedReportMarket,
+      generatedAt: reportGeneratedAt,
+      dataMode: reportMode,
       cards: decisionCards,
-      evidence,
-      painPoints,
+      evidence: reportEvidence,
+      painPoints: insightPainPoints,
       compliance: { aiGenerated: true, humanReviewStatus: reviewStatus },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `先机罗盘_${query}_${market}.json`;
+    link.download = `先机罗盘_${reportCategory}_${reportMarket}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
     setToast('洞察报告已导出');
@@ -403,7 +502,7 @@ function App() {
     const runtimeCardId = selectedCard?.runtimeCard?.card_id || decisionCards[0]?.runtimeCard?.card_id;
     if (runtimeCardId && runtimeState === 'connected') {
       try {
-        const response = await fetch(`http://localhost:8000/api/v1/cards/${runtimeCardId}/review`, {
+        const response = await fetch(`${API_BASE_URL}/api/v1/cards/${runtimeCardId}/review`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -426,7 +525,7 @@ function App() {
   const createEvolutionCandidate = async () => {
     setEvolutionLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/v1/evolution/candidates', { method: 'POST' });
+      const response = await fetch(`${API_BASE_URL}/api/v1/evolution/candidates`, { method: 'POST' });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || 'candidate failed');
       await loadEvolution();
@@ -441,7 +540,7 @@ function App() {
   const activateEvolutionPolicy = async (version) => {
     setEvolutionLoading(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/evolution/policies/${version}/activate`, { method: 'POST' });
+      const response = await fetch(`${API_BASE_URL}/api/v1/evolution/policies/${version}/activate`, { method: 'POST' });
       if (!response.ok) throw new Error('activate failed');
       await loadEvolution();
       setToast(`${version} 已激活，后续任务将使用新证据门槛`);
@@ -455,7 +554,7 @@ function App() {
   const rollbackEvolutionPolicy = async () => {
     setEvolutionLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/v1/evolution/rollback', { method: 'POST' });
+      const response = await fetch(`${API_BASE_URL}/api/v1/evolution/rollback`, { method: 'POST' });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || 'rollback failed');
       await loadEvolution();
@@ -495,7 +594,7 @@ function App() {
         <nav className="nav-list" aria-label="主导航">
           <button className={activeNav === 'workspace' ? 'active' : ''} onClick={() => handleNav('workspace')}><LayoutDashboard size={18} />洞察工作台</button>
           <button className={activeNav === 'radar' ? 'active' : ''} onClick={() => handleNav('radar')}><Target size={18} />痛点雷达</button>
-          <button className={activeNav === 'alerts' ? 'active' : ''} onClick={() => handleNav('alerts')}><Bell size={18} />信号监控<span className="nav-badge">2</span></button>
+          <button className={activeNav === 'alerts' ? 'active' : ''} onClick={() => handleNav('alerts')}><Bell size={18} />失效条件<span className="nav-badge">2</span></button>
           <button className={activeNav === 'history' ? 'active' : ''} onClick={() => handleNav('history')}><History size={18} />历史洞察</button>
           <button className={activeNav === 'evolution' ? 'active' : ''} onClick={() => handleNav('evolution')}><Activity size={18} />演进中心{openFailures.length > 0 && <span className="nav-badge">{openFailures.length}</span>}</button>
         </nav>
@@ -528,7 +627,7 @@ function App() {
               <div>
                 <span className="eyebrow">全球市场机会扫描</span>
                 <h1>今天，应该卖什么？</h1>
-                <p>多 Agent 持续汇聚全球信号，生成可执行、可追溯、可证伪的行动指令。</p>
+                <p>把分散的趋势、评论、竞品与供应链信号，编译成备货前可以验证的行动指令。</p>
               </div>
               <div className="mode-switch" aria-label="洞察模式">
                 <button className={mode === 'intuition' ? 'active' : ''} onClick={() => setMode('intuition')}>直觉</button>
@@ -573,8 +672,10 @@ function App() {
 
           <section className="report-header" ref={resultsRef}>
             <div className="report-product">
-              <img src={productImage} alt="静音款宠物自动喂食器产品概念" />
-              <div><span className="eyebrow">机会报告 · {selectedMarket?.code}</span><h2>{query || '宠物自动喂食器'}</h2><p>{selectedMarket?.name}市场 · 更新于 2026年8月13日 14:20</p></div>
+              {/(宠物|喂食|pet|feeder)/i.test(reportCategory)
+                ? <img src={productImage} alt="宠物自动喂食器演示概念" />
+                : <span className="report-product-placeholder"><PackageSearch size={26} /></span>}
+              <div><span className="eyebrow">机会报告 · {selectedReportMarket?.code} · {reportMode === 'mock' ? '场景化 Mock' : '离线固定样例'}</span><h2>{reportCategory}</h2><p>{selectedReportMarket?.name}市场 · 本次任务完成于 {formatReportTime(reportGeneratedAt)}</p></div>
             </div>
             <div className="report-actions">
               <button className="secondary-button" onClick={exportReport}><Download size={16} />导出</button>
@@ -583,17 +684,17 @@ function App() {
           </section>
 
           <section className="signal-strip">
-            <div><span className="metric-icon blue"><TrendingUp size={18} /></span><p>机会指数<small>综合需求与竞争</small></p><strong>86<em>/100</em></strong></div>
-            <div><span className="metric-icon green"><MessageCircleMore size={18} /></span><p>隐性痛点<small>217 条评论中</small></p><strong>82<em>条</em></strong></div>
-            <div><span className="metric-icon amber"><Boxes size={18} /></span><p>需求信号<small>进口额同比</small></p><strong>+41<em>%</em></strong></div>
+            <div><span className="metric-icon blue"><TrendingUp size={18} /></span><p>机会指数<small>需求、痛点与竞争空位</small></p><strong>{opportunityScore}<em>/100</em></strong></div>
+            <div><span className="metric-icon green"><MessageCircleMore size={18} /></span><p>首要隐性痛点<small>{leadPain.label}</small></p><strong>{leadPain.count}<em>条</em></strong></div>
+            <div><span className="metric-icon amber"><Boxes size={18} /></span><p>需求信号<small>{demandSignal.name}</small></p><strong>{demandSignal.value}<em>{demandSignal.note}</em></strong></div>
             <div><span className="metric-icon violet"><Clock3 size={18} /></span><p>机会窗口<small>建议复核周期</small></p><strong>14<em>天</em></strong></div>
           </section>
 
           {mode === 'intuition' ? (
             <section className="comparison-panel">
-              <div className="comparison-side intuition-side"><span className="comparison-label">经验直觉</span><h3>做一个功能更多、容量更大的喂食器</h3><p>产品同质化明显，进入 Top 10 需要依赖折扣与广告。</p><div className="hit-score"><span>已知痛点命中</span><strong>2 / 6</strong></div></div>
+              <div className="comparison-side intuition-side"><span className="comparison-label">经验直觉</span><h3>继续堆功能、跟随畅销款，再用低价测试</h3><p>没有明确验证对象，样品、首批备货和广告预算容易同时暴露在风险中。</p><div className="hit-score"><span>决策依据</span><strong>经验</strong></div></div>
               <div className="comparison-divider"><span>VS</span></div>
-              <div className="comparison-side evidence-side"><span className="comparison-label"><BadgeCheck size={14} />有据 AI</span><h3>放弃功能堆叠，聚焦夜间静音与易拆洗</h3><p>来自葡语原评、进口需求与竞品表达的交叉验证。</p><div className="hit-score"><span>已知痛点命中</span><strong>6 / 6</strong></div></div>
+              <div className="comparison-side evidence-side"><span className="comparison-label"><BadgeCheck size={14} />有据 AI</span><h3>{productDecision.title}</h3><p>{competitiveDecision.summary}</p><div className="hit-score"><span>证据对象</span><strong>{reportEvidence.length} 条</strong></div></div>
             </section>
           ) : (
             <>
@@ -615,18 +716,18 @@ function App() {
 
           <section className="insight-grid">
             <article className="panel radar-panel" id="pain-radar">
-              <div className="panel-head"><div><span className="eyebrow">原语洞察</span><h2>“我喜欢，但是…” 痛点雷达</h2></div><select aria-label="评论语言"><option>葡萄牙语 · 217</option><option>英语 · 94</option><option>西班牙语 · 63</option></select></div>
+              <div className="panel-head"><div><span className="eyebrow">原语洞察</span><h2>“我喜欢，但是…” 痛点雷达</h2></div><span className="mock-pill">Mock 原语样本</span></div>
               <div className="radar-body">
                 <div className="bubble-chart" aria-label="痛点机会气泡图">
                   <div className="axis-label y-label">提及频次 × 情感强度</div><div className="axis-label x-label">差异化可行性 →</div>
                   <div className="grid-lines" />
-                  {painPoints.map((point) => <button key={point.id} aria-label={`${point.label}，机会指数 ${point.value}`} className={`pain-bubble ${selectedPain === point.id ? 'selected' : ''}`} style={{ left: `${point.x}%`, top: `${point.y}%`, width: point.size, height: point.size, '--bubble': point.color }} onClick={() => setSelectedPain(point.id)}><span>{point.label}</span><small>{point.value}</small></button>)}
+                  {insightPainPoints.map((point) => <button key={point.id} aria-label={`${point.label}，机会指数 ${point.value}`} className={`pain-bubble ${selectedPain === point.id ? 'selected' : ''}`} style={{ left: `${point.x}%`, top: `${point.y}%`, width: point.size, height: point.size, '--bubble': point.color }} onClick={() => setSelectedPain(point.id)}><span>{point.label}</span><small>{point.value}</small></button>)}
                 </div>
                 <div className="review-card">
-                  <div className="review-top"><span className="hidden-tag"><Zap size={13} />隐性痛点</span><span>{reviews[selectedPain].meta}</span></div>
-                  <blockquote>“{reviews[selectedPain].original}”</blockquote>
-                  <p>{reviews[selectedPain].translation}</p>
-                  <button onClick={() => setToast('已打开 82 条相关原始评论')}>查看同类原文 <ArrowRight size={14} /></button>
+                  <div className="review-top"><span className="hidden-tag"><Zap size={13} />隐性痛点</span><span>{selectedReview?.meta}</span></div>
+                  <blockquote>“{selectedReview?.original}”</blockquote>
+                  <p>{selectedReview?.translation}</p>
+                  <button onClick={() => setToast(`已定位 ${insightPainPoints.find((item) => item.id === selectedPain)?.count || 0} 条同类样本`)}>查看同类样本 <ArrowRight size={14} /></button>
                 </div>
               </div>
             </article>
@@ -634,16 +735,16 @@ function App() {
             <article className="panel supply-panel" id="supply-chain">
               <div className="panel-head"><div><span className="eyebrow">领先指标</span><h2>供应链信号</h2></div><button className="icon-button" onClick={() => setToast('信号已刷新')} aria-label="刷新信号"><RefreshCw size={17} /></button></div>
               <div className="supply-list">
-                {supplySignals.map((signal) => <div className="supply-row" key={signal.name}><div><span className={`status-dot ${signal.state}`} /><p><strong>{signal.name}</strong><small>{signal.note}</small></p></div><MiniBars values={signal.bars} state={signal.state} /><strong>{signal.value}</strong></div>)}
+                {insightSupplySignals.map((signal) => <div className="supply-row" key={signal.name}><div><span className={`status-dot ${signal.state}`} /><p><strong>{signal.name}</strong><small>{signal.note}</small></p></div><MiniBars values={signal.bars} state={signal.state} /><strong>{signal.value}</strong></div>)}
               </div>
-              <div className="alert-card"><AlertTriangle size={18} /><div><strong>反向条件监控中</strong><p>若南美运价 7 日涨幅超过 15%，此定价建议将自动失效。</p></div><button onClick={() => setToast('预警规则已开启')}>已开启</button></div>
+              <div className="alert-card"><AlertTriangle size={18} /><div><strong>反向条件已登记</strong><p>{pricingFailure ? `${pricingFailure.metric_to_watch} ${pricingFailure.threshold} 时重新计算定价。` : '真实数据 Provider 接入后按阈值触发重新计算。'}</p></div><button onClick={() => setToast('阈值已进入决策卡；实时触发器属于下一阶段')}>待接入</button></div>
             </article>
           </section>
 
           <section className="evidence-panel">
-            <div className="panel-head"><div><span className="eyebrow">可追溯依据</span><h2>这项决策，凭什么？</h2></div><span className="verified-pill"><ShieldCheck size={15} />3/3 已核实</span></div>
+            <div className="panel-head"><div><span className="eyebrow">可追溯依据</span><h2>这项决策，凭什么？</h2></div><span className="verified-pill"><ShieldCheck size={15} />{reportEvidence.length} 条结构校验通过</span></div>
             <div className="evidence-table">
-              {evidence.map((item, index) => <button key={item.source} onClick={() => setToast(`正在打开：${item.source}`)}><span className="evidence-index">0{index + 1}</span><span className="evidence-source"><small>{item.type}</small><strong>{item.source}</strong></span><span className="evidence-claim">{item.claim}</span><strong className="evidence-value">{item.value}</strong><span className="evidence-open"><ExternalLink size={15} /></span></button>)}
+              {reportEvidence.map((item, index) => <button key={item.source} onClick={() => item.url ? window.open(item.url, '_blank', 'noopener,noreferrer') : setToast(`Mock 来源：${item.source}`)}><span className="evidence-index">{String(index + 1).padStart(2, '0')}</span><span className="evidence-source"><small>{item.type}</small><strong>{item.source}</strong></span><span className="evidence-claim">{item.claim}</span><strong className="evidence-value">{item.value}</strong><span className="evidence-open"><ExternalLink size={15} /></span></button>)}
             </div>
           </section>
 
@@ -683,11 +784,11 @@ function App() {
             </div>
           </section>
 
-          <footer><span><Compass size={15} />先机罗盘 · 决策可追溯，结论可证伪</span><span>数据模式：Mock · AI 内容披露符合 EU AI Act §50</span></footer>
+          <footer><span><Compass size={15} />先机罗盘 · 决策可追溯，结论可证伪</span><span>数据模式：场景化 Mock 冷启动 · 非真实实时市场结果</span></footer>
         </div>
       </main>
 
-      {selectedCard && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedCard(null)}><div className="card-modal" role="dialog" aria-modal="true" aria-label={`${selectedCard.type}详情`}><button className="modal-close icon-button" onClick={() => setSelectedCard(null)}><X size={19} /></button><CardDetail card={selectedCard} onCopy={copyText} onReview={setReview} reviewStatus={reviewStatus} /></div></div>}
+      {selectedCard && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedCard(null)}><div className="card-modal" role="dialog" aria-modal="true" aria-label={`${selectedCard.type}详情`}><button className="modal-close icon-button" onClick={() => setSelectedCard(null)}><X size={19} /></button><CardDetail card={selectedCard} onCopy={copyText} onReview={setReview} reviewStatus={reviewStatus} evidence={reportEvidence} reportMarket={reportMarket} generatedAt={reportGeneratedAt} /></div></div>}
 
       {historyOpen && <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setHistoryOpen(false)}><aside className="history-drawer"><div className="drawer-head"><div><span className="eyebrow">工作记录</span><h2>历史洞察</h2></div><button className="icon-button" onClick={() => setHistoryOpen(false)}><X size={18} /></button></div>{[
         ['宠物自动喂食器', '巴西', '刚刚', '86'], ['便携榨汁机', '墨西哥', '昨天', '74'], ['降噪耳机', '日本', '8月10日', '69'],
@@ -697,15 +798,17 @@ function App() {
   );
 }
 
-function CardDetail({ card, onCopy, onReview, reviewStatus }) {
+function CardDetail({ card, onCopy, onReview, reviewStatus, evidence, reportMarket, generatedAt }) {
   const Icon = card.icon;
+  const detailEvidence = card.runtimeCard ? mapRuntimeEvidence([card.runtimeCard]).slice(0, 3) : evidence.slice(0, 3);
+  const reportCode = `FC-${reportMarket}-${new Date(generatedAt).toISOString().slice(2, 10).replaceAll('-', '')}`;
   return (
     <div className="modal-content">
-      <div className="modal-title"><span className={`modal-icon ${card.tone}`}><Icon size={20} /></span><div><span className="eyebrow">{card.type} · FC-BR-0813</span><h2>{card.title}</h2></div><div className="confidence-block"><ScoreRing value={card.confidence} size={48} /><small>置信度</small></div></div>
+      <div className="modal-title"><span className={`modal-icon ${card.tone}`}><Icon size={20} /></span><div><span className="eyebrow">{card.type} · {reportCode}</span><h2>{card.title}</h2></div><div className="confidence-block"><ScoreRing value={card.confidence} size={48} /><small>置信度</small></div></div>
       <div className="action-box"><span>行动指令</span><p>{card.summary}</p></div>
-      <div className="detail-section"><h3><BookOpen size={17} />凭什么 <span>证据链 · 3 条</span></h3>{evidence.map((item) => <div className="detail-evidence" key={item.source}><BadgeCheck size={16} /><div><strong>{item.claim}</strong><small>{item.source}</small></div><b>{item.value}</b></div>)}</div>
-      <div className="detail-two-col"><div className="detail-section hook-box"><h3><Users size={17} />私域落点</h3><p><b>种子人群</b> {card.hook?.audience || '养宠 + 夜班 / 浅眠人群'}</p><p><b>承接渠道</b> {card.hook?.channel || 'WhatsApp 巴西本地养宠群'}</p><div className="copy-hook"><span>{card.hook?.message || '让它半夜别吵醒你'}</span><button onClick={() => onCopy(card.hook?.message || '让它半夜别吵醒你')}><Clipboard size={15} />复制</button></div></div><div className="detail-section failure-box"><h3><AlertTriangle size={17} />什么时候失效</h3>{(card.failureConditions || [{ condition: 'Top 10 出现 ≥2 款静音产品' }, { condition: 'FBX 南美运价 7 日涨幅超过 15%' }]).slice(0, 2).map((item) => <p key={item.condition}>{item.condition}</p>)}<button><Bell size={15} />失效监控已开启</button></div></div>
-      <div className="modal-compliance"><ShieldCheck size={17} /><span>AI 生成 · 需人工复核（EU AI Act §50）<small>GT / Amazon BR / UN Comtrade / FBX · 采集于 2026-08-13 14:20</small></span></div>
+      <div className="detail-section"><h3><BookOpen size={17} />凭什么 <span>证据链 · {detailEvidence.length} 条</span></h3>{detailEvidence.map((item) => <div className="detail-evidence" key={item.source}><BadgeCheck size={16} /><div><strong>{item.claim}</strong><small>{item.source}</small></div><b>{item.value}</b></div>)}</div>
+      <div className="detail-two-col"><div className="detail-section hook-box"><h3><Users size={17} />种子验证</h3><p><b>种子人群</b> {card.hook?.audience}</p><p><b>承接渠道</b> {card.hook?.channel}</p><div className="copy-hook"><span>{card.hook?.message}</span><button onClick={() => onCopy(card.hook?.message)}><Clipboard size={15} />复制</button></div></div><div className="detail-section failure-box"><h3><AlertTriangle size={17} />什么时候失效</h3>{(card.failureConditions || [{ condition: '关键市场信号越过阈值' }]).slice(0, 2).map((item) => <p key={item.condition}>{item.condition}</p>)}<button><Bell size={15} />失效条件已登记</button></div></div>
+      <div className="modal-compliance"><ShieldCheck size={17} /><span>AI 生成 · 场景化 Mock · 需人工复核<small>{detailEvidence.map((item) => item.source).join(' / ')} · 任务完成于 {formatReportTime(generatedAt)}</small></span></div>
       <div className="modal-actions"><span>复核这张卡</span><div><button className={reviewStatus === 'approved' ? 'active approved' : ''} onClick={() => onReview('approved')}><CheckCircle2 size={16} />采纳</button><button className={reviewStatus === 'discussed' ? 'active discussed' : ''} onClick={() => onReview('discussed')}><MessageCircleMore size={16} />待议</button><button className={reviewStatus === 'rejected' ? 'active rejected' : ''} onClick={() => onReview('rejected')}><XCircle size={16} />驳回</button></div></div>
     </div>
   );

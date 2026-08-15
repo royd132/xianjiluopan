@@ -1,8 +1,9 @@
 {
-  "task_id": "a988b12b-dc0f-4300-ae43-a792bfc595bc",
+  "task_id": "0c7b0e4b-8f7a-4fbf-937f-bd8e39719db2",
   "request": {
     "category": "宠物自动喂食器",
     "market": "BR",
+    "workspace_id": "default",
     "mode": "mock",
     "languages": [
       "pt",
@@ -12,88 +13,88 @@
   },
   "cards": [
     {
-      "card_id": "815e6c93-c252-49a3-812e-90b474a98bcc",
+      "card_id": "f2952f3e-fa8f-4036-89bc-a0b5410a2a08",
       "card_type": "product_selection",
       "version": 1,
-      "action_title": "做静音款宠物自动喂食器，切入巴西市场",
-      "action_detail": "主打夜间运行不扰眠，并把易拆洗作为第二差异点。",
+      "action_title": "优先验证“低噪电机 + 易拆洗料仓”的宠物自动喂食器，进入巴西市场",
+      "action_detail": "把“夜间噪音”作为第一问题，用大颗粒防卡粮结构构成第二道差异；先验证需求，再开模或备货。",
       "confidence": "high",
-      "confidence_score": 0.88,
+      "confidence_score": 0.87,
       "validity_days": 14,
-      "generated_at": "2026-08-13T11:49:25.540519Z",
-      "expires_at": "2026-08-27T11:49:25.540519Z",
+      "generated_at": "2026-08-15T08:29:26.719784Z",
+      "expires_at": "2026-08-29T08:29:26.719784Z",
       "evidences": [
         {
-          "evidence_id": "f4f57d14-ef5c-4ee6-a683-46f968274c98",
+          "evidence_id": "cc79b9d0-6451-4630-bb48-f9d597bde011",
           "source_name": "Google Trends · Brazil",
           "source_type": "trend",
-          "claim": "\"宠物自动喂食器\" 近 90 天搜索热度上升",
+          "claim": "“宠物自动喂食器”在巴西近 90 天搜索热度上升",
           "raw_value": "+64%",
           "url": "https://trends.google.com/",
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.91,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.89,
+          "verified": false
         },
         {
-          "evidence_id": "ad6e4e2c-ce05-4e96-8270-4bfabab504ab",
-          "source_name": "Amazon Brasil · 217 条葡语评论",
+          "evidence_id": "1700c92c-0b18-47b0-880e-6ceab226d534",
+          "source_name": "Amazon Brasil · 217 条葡萄牙语评论样本",
           "source_type": "review",
-          "claim": "38% 的让步评论提到夜间运行噪音",
+          "claim": "38% 的让步评论集中提到“夜间噪音”",
           "raw_value": "82 / 217",
-          "url": "https://www.amazon.com.br/",
+          "url": null,
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.88,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.86,
+          "verified": false
         },
         {
-          "evidence_id": "5c600a53-48d7-46c8-8f7f-c55280a8e620",
+          "evidence_id": "461649db-3859-47a4-9d3f-cafb598eeaff",
           "source_name": "UN Comtrade · HS 8509",
           "source_type": "customs",
-          "claim": "巴西相关小家电品类进口额同比增长",
+          "claim": "巴西相关品类进口额同比增长",
           "raw_value": "+41% YoY",
           "url": "https://comtradeplus.un.org/",
           "language": "en",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.86,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.84,
+          "verified": false
         },
         {
-          "evidence_id": "d37dba81-9df2-427c-864a-2abb6226eb54",
-          "source_name": "Marketplace Top 10 Snapshot",
+          "evidence_id": "fa8eefa9-4076-4d66-9959-9caabdf3e47b",
+          "source_name": "Amazon Brasil Top 10 Snapshot",
           "source_type": "price",
-          "claim": "Top 10 中没有产品明确以低于 30dB 为首屏卖点",
+          "claim": "Top 10 中仅 0 款把“夜间运行分贝”作为首屏证据",
           "raw_value": "0 / 10",
           "url": null,
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.83,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.82,
+          "verified": false
         }
       ],
       "private_domain_hook": {
-        "seed_audience": "养宠且夜班/浅眠人群",
-        "channel": "WhatsApp 本地养宠群",
+        "seed_audience": "养宠且夜班/浅眠的人群",
+        "channel": "WhatsApp 本地兴趣群",
         "hook_message": "让它半夜别吵醒你",
-        "expected_conversion_hint": "先进行 30 份意向测试"
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
       },
       "failure_conditions": [
         {
-          "condition": "静音卖点被快速补齐",
-          "metric_to_watch": "Top10 静音款数量",
+          "condition": "核心差异被头部竞品快速补齐",
+          "metric_to_watch": "Top 10 中公开“夜间运行分贝”的竞品数",
           "threshold": ">=2",
           "action_on_trigger": "recalculate"
         }
       ],
       "data_sources": [
-        "Amazon Brasil · 217 条葡语评论",
-        "FBX South America",
+        "Amazon Brasil Top 10 Snapshot",
+        "Amazon Brasil · 217 条葡萄牙语评论样本",
         "Google Trends · Brazil",
-        "Marketplace Top 10 Snapshot",
-        "UN Comtrade · HS 8509"
+        "UN Comtrade · HS 8509",
+        "南美海运 FBX"
       ],
-      "collection_timestamp": "2026-08-13T11:49:25.540455Z",
+      "collection_timestamp": "2026-08-15T08:29:26.719736Z",
       "ai_generated": true,
       "c2pa_signature": null,
       "human_review_status": "pending",
@@ -102,92 +103,94 @@
       "card_specific_data": {
         "blue_ocean_index": 0.86,
         "target_market": "BR",
-        "differentiation_point": "低于30dB + 易拆洗"
+        "differentiation_point": "低噪电机 + 易拆洗料仓",
+        "primary_pain": "夜间噪音",
+        "mock_scope": "pet_feeder × BR"
       }
     },
     {
-      "card_id": "f28bcfb8-49d8-4a7e-bcaf-6581e53effd5",
+      "card_id": "26c66fcd-688d-4ee1-9174-0e0eaad18f09",
       "card_type": "pricing",
       "version": 1,
-      "action_title": "锚定 US$49.90，首发价控制在 US$44–52",
-      "action_detail": "以静音电机和易拆洗结构支撑约 18% 溢价，目标毛利 31%。",
+      "action_title": "以 US$49.90 为价值锚，首发测试 US$45–52",
+      "action_detail": "用“夜间运行分贝”支撑价格，不用功能数量支撑价格；首轮目标毛利 31%，物流成本越线时重新计算。",
       "confidence": "high",
       "confidence_score": 0.82,
       "validity_days": 14,
-      "generated_at": "2026-08-13T11:49:25.540581Z",
-      "expires_at": "2026-08-27T11:49:25.540581Z",
+      "generated_at": "2026-08-15T08:29:26.719814Z",
+      "expires_at": "2026-08-29T08:29:26.719814Z",
       "evidences": [
         {
-          "evidence_id": "f4f57d14-ef5c-4ee6-a683-46f968274c98",
+          "evidence_id": "cc79b9d0-6451-4630-bb48-f9d597bde011",
           "source_name": "Google Trends · Brazil",
           "source_type": "trend",
-          "claim": "\"宠物自动喂食器\" 近 90 天搜索热度上升",
+          "claim": "“宠物自动喂食器”在巴西近 90 天搜索热度上升",
           "raw_value": "+64%",
           "url": "https://trends.google.com/",
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.91,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.89,
+          "verified": false
         },
         {
-          "evidence_id": "ad6e4e2c-ce05-4e96-8270-4bfabab504ab",
-          "source_name": "Amazon Brasil · 217 条葡语评论",
+          "evidence_id": "1700c92c-0b18-47b0-880e-6ceab226d534",
+          "source_name": "Amazon Brasil · 217 条葡萄牙语评论样本",
           "source_type": "review",
-          "claim": "38% 的让步评论提到夜间运行噪音",
+          "claim": "38% 的让步评论集中提到“夜间噪音”",
           "raw_value": "82 / 217",
-          "url": "https://www.amazon.com.br/",
+          "url": null,
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.88,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.86,
+          "verified": false
         },
         {
-          "evidence_id": "5c600a53-48d7-46c8-8f7f-c55280a8e620",
+          "evidence_id": "461649db-3859-47a4-9d3f-cafb598eeaff",
           "source_name": "UN Comtrade · HS 8509",
           "source_type": "customs",
-          "claim": "巴西相关小家电品类进口额同比增长",
+          "claim": "巴西相关品类进口额同比增长",
           "raw_value": "+41% YoY",
           "url": "https://comtradeplus.un.org/",
           "language": "en",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.86,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.84,
+          "verified": false
         },
         {
-          "evidence_id": "d37dba81-9df2-427c-864a-2abb6226eb54",
-          "source_name": "Marketplace Top 10 Snapshot",
+          "evidence_id": "fa8eefa9-4076-4d66-9959-9caabdf3e47b",
+          "source_name": "Amazon Brasil Top 10 Snapshot",
           "source_type": "price",
-          "claim": "Top 10 中没有产品明确以低于 30dB 为首屏卖点",
+          "claim": "Top 10 中仅 0 款把“夜间运行分贝”作为首屏证据",
           "raw_value": "0 / 10",
           "url": null,
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.83,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.82,
+          "verified": false
         }
       ],
       "private_domain_hook": {
-        "seed_audience": "已购买自动喂食器且抱怨噪音的人群",
-        "channel": "WhatsApp/邮件候补名单",
-        "hook_message": "安静升级，不增加夜间负担",
-        "expected_conversion_hint": null
+        "seed_audience": "养宠且夜班/浅眠的人群",
+        "channel": "WhatsApp 本地兴趣群",
+        "hook_message": "让它半夜别吵醒你",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
       },
       "failure_conditions": [
         {
-          "condition": "物流成本侵蚀毛利",
-          "metric_to_watch": "FBX 南美运价 7 日变化",
+          "condition": "物流成本侵蚀目标毛利",
+          "metric_to_watch": "南美海运 FBX 7 日变化",
           "threshold": ">15%",
           "action_on_trigger": "recalculate"
         }
       ],
       "data_sources": [
-        "Amazon Brasil · 217 条葡语评论",
-        "FBX South America",
+        "Amazon Brasil Top 10 Snapshot",
+        "Amazon Brasil · 217 条葡萄牙语评论样本",
         "Google Trends · Brazil",
-        "Marketplace Top 10 Snapshot",
-        "UN Comtrade · HS 8509"
+        "UN Comtrade · HS 8509",
+        "南美海运 FBX"
       ],
-      "collection_timestamp": "2026-08-13T11:49:25.540455Z",
+      "collection_timestamp": "2026-08-15T08:29:26.719736Z",
       "ai_generated": true,
       "c2pa_signature": null,
       "human_review_status": "pending",
@@ -196,192 +199,195 @@
       "card_specific_data": {
         "anchor_price": 49.9,
         "price_range": [
-          44,
+          45,
           52
         ],
-        "gross_margin_pct": 31
+        "gross_margin_pct": 31,
+        "pricing_basis": "夜间运行分贝"
       }
     },
     {
-      "card_id": "abeacbf4-e3dc-465e-8582-41102b4a9218",
+      "card_id": "3fe0e5ab-6456-42d7-8a2d-1e2500c917c1",
       "card_type": "competitive",
       "version": 1,
-      "action_title": "把分贝数变成可验证卖点，而不是泛讲智能",
-      "action_detail": "详情页首屏展示夜间运行分贝对比，攻击 Top10 的共同表达空位。",
+      "action_title": "把“夜间运行分贝”做成首屏证据，而不是泛讲智能喂养",
+      "action_detail": "围绕“夜间噪音”发布同条件对比、测试方法和原语用户证言，攻击 Top 10 尚未占领的表达空位。",
       "confidence": "high",
       "confidence_score": 0.85,
       "validity_days": 14,
-      "generated_at": "2026-08-13T11:49:25.540600Z",
-      "expires_at": "2026-08-27T11:49:25.540600Z",
+      "generated_at": "2026-08-15T08:29:26.719829Z",
+      "expires_at": "2026-08-29T08:29:26.719829Z",
       "evidences": [
         {
-          "evidence_id": "f4f57d14-ef5c-4ee6-a683-46f968274c98",
+          "evidence_id": "cc79b9d0-6451-4630-bb48-f9d597bde011",
           "source_name": "Google Trends · Brazil",
           "source_type": "trend",
-          "claim": "\"宠物自动喂食器\" 近 90 天搜索热度上升",
+          "claim": "“宠物自动喂食器”在巴西近 90 天搜索热度上升",
           "raw_value": "+64%",
           "url": "https://trends.google.com/",
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.91,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.89,
+          "verified": false
         },
         {
-          "evidence_id": "ad6e4e2c-ce05-4e96-8270-4bfabab504ab",
-          "source_name": "Amazon Brasil · 217 条葡语评论",
+          "evidence_id": "1700c92c-0b18-47b0-880e-6ceab226d534",
+          "source_name": "Amazon Brasil · 217 条葡萄牙语评论样本",
           "source_type": "review",
-          "claim": "38% 的让步评论提到夜间运行噪音",
+          "claim": "38% 的让步评论集中提到“夜间噪音”",
           "raw_value": "82 / 217",
-          "url": "https://www.amazon.com.br/",
+          "url": null,
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.88,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.86,
+          "verified": false
         },
         {
-          "evidence_id": "5c600a53-48d7-46c8-8f7f-c55280a8e620",
+          "evidence_id": "461649db-3859-47a4-9d3f-cafb598eeaff",
           "source_name": "UN Comtrade · HS 8509",
           "source_type": "customs",
-          "claim": "巴西相关小家电品类进口额同比增长",
+          "claim": "巴西相关品类进口额同比增长",
           "raw_value": "+41% YoY",
           "url": "https://comtradeplus.un.org/",
           "language": "en",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.86,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.84,
+          "verified": false
         },
         {
-          "evidence_id": "d37dba81-9df2-427c-864a-2abb6226eb54",
-          "source_name": "Marketplace Top 10 Snapshot",
+          "evidence_id": "fa8eefa9-4076-4d66-9959-9caabdf3e47b",
+          "source_name": "Amazon Brasil Top 10 Snapshot",
           "source_type": "price",
-          "claim": "Top 10 中没有产品明确以低于 30dB 为首屏卖点",
+          "claim": "Top 10 中仅 0 款把“夜间运行分贝”作为首屏证据",
           "raw_value": "0 / 10",
           "url": null,
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.83,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.82,
+          "verified": false
         }
       ],
       "private_domain_hook": {
-        "seed_audience": "对睡眠和宠物作息敏感的养宠用户",
-        "channel": "TikTok Shop 内容 + WhatsApp 群",
-        "hook_message": "听得见的差异，低于30dB",
-        "expected_conversion_hint": null
+        "seed_audience": "养宠且夜班/浅眠的人群",
+        "channel": "WhatsApp 本地兴趣群",
+        "hook_message": "让它半夜别吵醒你",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
       },
       "failure_conditions": [
         {
-          "condition": "竞品开始普遍公开分贝参数",
-          "metric_to_watch": "Top10 分贝参数覆盖率",
+          "condition": "竞品开始普遍公开同类证据",
+          "metric_to_watch": "Top 10 “夜间运行分贝”证据覆盖率",
           "threshold": ">=50%",
           "action_on_trigger": "watch"
         }
       ],
       "data_sources": [
-        "Amazon Brasil · 217 条葡语评论",
-        "FBX South America",
+        "Amazon Brasil Top 10 Snapshot",
+        "Amazon Brasil · 217 条葡萄牙语评论样本",
         "Google Trends · Brazil",
-        "Marketplace Top 10 Snapshot",
-        "UN Comtrade · HS 8509"
+        "UN Comtrade · HS 8509",
+        "南美海运 FBX"
       ],
-      "collection_timestamp": "2026-08-13T11:49:25.540455Z",
+      "collection_timestamp": "2026-08-15T08:29:26.719736Z",
       "ai_generated": true,
       "c2pa_signature": null,
       "human_review_status": "pending",
       "human_reviewer": null,
       "human_reviewed_at": null,
       "card_specific_data": {
-        "copy": "夜间不扰眠，定时喂养更安心",
+        "copy": "让它半夜别吵醒你",
+        "proof_metric": "夜间运行分贝",
+        "expression_gap_pct": 100,
         "defense_actions": [
-          "公开分贝测试",
-          "强化易拆洗结构",
+          "公开测试方法",
+          "强化大颗粒防卡粮结构",
           "保留原语用户证言"
         ]
       }
     },
     {
-      "card_id": "bd2e0943-28a1-410a-a390-a0a5bd8e8109",
+      "card_id": "02b95f87-a7e9-4845-bfd9-a83525c16a93",
       "card_type": "private_domain",
       "version": 1,
-      "action_title": "用养宠 + 夜班/浅眠人群完成首轮种子验证",
-      "action_detail": "在巴西本地 WhatsApp 养宠群投放静音对比素材，先验证卖点再备货。",
+      "action_title": "先在WhatsApp 与 Facebook 本地兴趣社区找到 30 个种子用户",
+      "action_detail": "针对“养宠且夜班/浅眠的人群”投放问题对比素材，用“让它半夜别吵醒你”测试购买意向；达到阈值后再决定首批备货。",
       "confidence": "high",
-      "confidence_score": 0.91,
+      "confidence_score": 0.9,
       "validity_days": 14,
-      "generated_at": "2026-08-13T11:49:25.540614Z",
-      "expires_at": "2026-08-27T11:49:25.540614Z",
+      "generated_at": "2026-08-15T08:29:26.719840Z",
+      "expires_at": "2026-08-29T08:29:26.719840Z",
       "evidences": [
         {
-          "evidence_id": "f4f57d14-ef5c-4ee6-a683-46f968274c98",
+          "evidence_id": "cc79b9d0-6451-4630-bb48-f9d597bde011",
           "source_name": "Google Trends · Brazil",
           "source_type": "trend",
-          "claim": "\"宠物自动喂食器\" 近 90 天搜索热度上升",
+          "claim": "“宠物自动喂食器”在巴西近 90 天搜索热度上升",
           "raw_value": "+64%",
           "url": "https://trends.google.com/",
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.91,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.89,
+          "verified": false
         },
         {
-          "evidence_id": "ad6e4e2c-ce05-4e96-8270-4bfabab504ab",
-          "source_name": "Amazon Brasil · 217 条葡语评论",
+          "evidence_id": "1700c92c-0b18-47b0-880e-6ceab226d534",
+          "source_name": "Amazon Brasil · 217 条葡萄牙语评论样本",
           "source_type": "review",
-          "claim": "38% 的让步评论提到夜间运行噪音",
+          "claim": "38% 的让步评论集中提到“夜间噪音”",
           "raw_value": "82 / 217",
-          "url": "https://www.amazon.com.br/",
+          "url": null,
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.88,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.86,
+          "verified": false
         },
         {
-          "evidence_id": "5c600a53-48d7-46c8-8f7f-c55280a8e620",
+          "evidence_id": "461649db-3859-47a4-9d3f-cafb598eeaff",
           "source_name": "UN Comtrade · HS 8509",
           "source_type": "customs",
-          "claim": "巴西相关小家电品类进口额同比增长",
+          "claim": "巴西相关品类进口额同比增长",
           "raw_value": "+41% YoY",
           "url": "https://comtradeplus.un.org/",
           "language": "en",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.86,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.84,
+          "verified": false
         },
         {
-          "evidence_id": "d37dba81-9df2-427c-864a-2abb6226eb54",
-          "source_name": "Marketplace Top 10 Snapshot",
+          "evidence_id": "fa8eefa9-4076-4d66-9959-9caabdf3e47b",
+          "source_name": "Amazon Brasil Top 10 Snapshot",
           "source_type": "price",
-          "claim": "Top 10 中没有产品明确以低于 30dB 为首屏卖点",
+          "claim": "Top 10 中仅 0 款把“夜间运行分贝”作为首屏证据",
           "raw_value": "0 / 10",
           "url": null,
           "language": "pt",
-          "collected_at": "2026-08-13T11:49:25.534065Z",
-          "confidence": 0.83,
-          "verified": true
+          "collected_at": "2026-08-15T08:29:26.705821Z",
+          "confidence": 0.82,
+          "verified": false
         }
       ],
       "private_domain_hook": {
-        "seed_audience": "养宠 + 夜班/浅眠人群",
-        "channel": "WhatsApp 巴西本地养宠群",
+        "seed_audience": "养宠且夜班/浅眠的人群",
+        "channel": "WhatsApp 本地兴趣群",
         "hook_message": "让它半夜别吵醒你",
-        "expected_conversion_hint": "30份意向 + 5次深访"
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
       },
       "failure_conditions": [
         {
           "condition": "种子测试未形成有效兴趣",
-          "metric_to_watch": "落地页意向率",
+          "metric_to_watch": "落地页购买意向率",
           "threshold": "<5%",
           "action_on_trigger": "abort"
         }
       ],
       "data_sources": [
-        "Amazon Brasil · 217 条葡语评论",
-        "FBX South America",
+        "Amazon Brasil Top 10 Snapshot",
+        "Amazon Brasil · 217 条葡萄牙语评论样本",
         "Google Trends · Brazil",
-        "Marketplace Top 10 Snapshot",
-        "UN Comtrade · HS 8509"
+        "UN Comtrade · HS 8509",
+        "南美海运 FBX"
       ],
-      "collection_timestamp": "2026-08-13T11:49:25.540455Z",
+      "collection_timestamp": "2026-08-15T08:29:26.719736Z",
       "ai_generated": true,
       "c2pa_signature": null,
       "human_review_status": "pending",
@@ -389,10 +395,11 @@
       "human_reviewed_at": null,
       "card_specific_data": {
         "gathering_places": [
-          "WhatsApp 养宠群",
-          "Facebook 本地猫犬社区"
+          "WhatsApp 与 Facebook 本地兴趣社区",
+          "Amazon Brasil"
         ],
-        "repurchase_signal_strength": "strong"
+        "repurchase_signal_strength": "strong",
+        "validation_sample": 30
       }
     }
   ],
@@ -405,10 +412,11 @@
       "opportunity_index": 0.88,
       "hidden_pain": true,
       "languages": [
-        "pt"
+        "pt",
+        "en"
       ],
-      "sample_original": "Adoro o alimentador, mas o motor faz muito barulho durante a madrugada.",
-      "sample_translation": "我很喜欢这个喂食器，但电机在半夜运行时声音很大。"
+      "sample_original": "Gosto muito deste produto, mas faz barulho demais à noite.",
+      "sample_translation": "我很喜欢这个宠物自动喂食器，但夜间噪音。"
     },
     {
       "pain_type": "cleaning",
@@ -419,10 +427,10 @@
       "hidden_pain": true,
       "languages": [
         "pt",
-        "es"
+        "en"
       ],
-      "sample_original": "Ótimo produto, porém desmontar para limpar dá muito trabalho.",
-      "sample_translation": "产品很好，不过拆开清洗非常麻烦。"
+      "sample_original": "Gosto muito deste produto, mas é difícil desmontar para limpar.",
+      "sample_translation": "我很喜欢这个宠物自动喂食器，但清洗困难。"
     },
     {
       "pain_type": "jamming",
@@ -435,8 +443,8 @@
         "pt",
         "en"
       ],
-      "sample_original": "Funciona bem, mas a ração trava quando os grãos são maiores.",
-      "sample_translation": "运行不错，但颗粒稍大时就会卡粮。"
+      "sample_original": "Gosto muito deste produto, mas entope com facilidade.",
+      "sample_translation": "我很喜欢这个宠物自动喂食器，但容易卡粮。"
     },
     {
       "pain_type": "portion",
@@ -446,17 +454,17 @@
       "opportunity_index": 0.51,
       "hidden_pain": true,
       "languages": [
-        "es",
+        "pt",
         "en"
       ],
-      "sample_original": "Me gusta mucho, pero la porción nunca parece igual.",
-      "sample_translation": "我很喜欢它，但每次出粮量似乎都不一样。"
+      "sample_original": "Gosto muito deste produto, mas a quantidade nunca é consistente.",
+      "sample_translation": "我很喜欢这个宠物自动喂食器，但份量不准。"
     }
   ],
   "supply_signals": [
     {
       "signal_type": "customs",
-      "label": "巴西进口需求",
+      "label": "巴西相关品类进口需求",
       "current_value": 41.0,
       "unit": "%",
       "change_pct": 41.0,
@@ -472,7 +480,7 @@
       "change_pct": 6.2,
       "period": "30d",
       "status": "watch",
-      "source": "FBX"
+      "source": "FBX / reference index"
     },
     {
       "signal_type": "fx",
@@ -495,7 +503,7 @@
     "safety-evaluator"
   ],
   "mode": "mock",
-  "started_at": "2026-08-13T11:49:25.533082Z",
-  "completed_at": "2026-08-13T11:49:25.543845Z",
-  "trace_id": "735c1be7-1e5f-4175-aea9-287ccb628a6b"
+  "started_at": "2026-08-15T08:29:26.617920Z",
+  "completed_at": "2026-08-15T08:29:26.730015Z",
+  "trace_id": "88810082-190a-47a8-86de-9e78e468b160"
 }

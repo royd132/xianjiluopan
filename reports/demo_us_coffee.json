@@ -1,0 +1,509 @@
+{
+  "task_id": "a6a7ea89-4bb7-4f8a-bc10-1a62b8eebce7",
+  "request": {
+    "category": "portable coffee grinder",
+    "market": "US",
+    "workspace_id": "default",
+    "mode": "mock",
+    "languages": [
+      "pt",
+      "en",
+      "es"
+    ]
+  },
+  "cards": [
+    {
+      "card_id": "0b46a3ce-2081-4680-a4c8-9a1c841a761e",
+      "card_type": "product_selection",
+      "version": 1,
+      "action_title": "优先验证“低残粉 + 刻度复现”的portable coffee grinder，进入美国市场",
+      "action_detail": "把“研磨一致性差”作为第一问题，用静电控制与易清洁粉道构成第二道差异；先验证需求，再开模或备货。",
+      "confidence": "high",
+      "confidence_score": 0.87,
+      "validity_days": 14,
+      "generated_at": "2026-08-15T08:29:28.101551Z",
+      "expires_at": "2026-08-29T08:29:28.101551Z",
+      "evidences": [
+        {
+          "evidence_id": "18600f69-5f45-43b7-bb00-cda512be7ae2",
+          "source_name": "Google Trends · United States",
+          "source_type": "trend",
+          "claim": "“portable coffee grinder”在美国近 90 天搜索热度上升",
+          "raw_value": "+38%",
+          "url": "https://trends.google.com/",
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.89,
+          "verified": false
+        },
+        {
+          "evidence_id": "47676e12-d54f-4df0-a1d0-98a55d78d5d8",
+          "source_name": "Amazon US · 134 条英语/西班牙语评论样本",
+          "source_type": "review",
+          "claim": "43% 的让步评论集中提到“研磨一致性差”",
+          "raw_value": "58 / 134",
+          "url": null,
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.86,
+          "verified": false
+        },
+        {
+          "evidence_id": "61b15de9-af3a-4c6a-aba0-9d5d7c257630",
+          "source_name": "UN Comtrade · HS 8509",
+          "source_type": "customs",
+          "claim": "美国相关品类进口额同比增长",
+          "raw_value": "+18% YoY",
+          "url": "https://comtradeplus.un.org/",
+          "language": "en",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.84,
+          "verified": false
+        },
+        {
+          "evidence_id": "a01f03be-b14a-4572-9af7-847c955f1832",
+          "source_name": "Amazon US Top 10 Snapshot",
+          "source_type": "price",
+          "claim": "Top 10 中仅 1 款把“残粉重量 + 粒径一致性”作为首屏证据",
+          "raw_value": "1 / 10",
+          "url": null,
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.82,
+          "verified": false
+        }
+      ],
+      "private_domain_hook": {
+        "seed_audience": "手冲入门升级、希望每天复现配方的人群",
+        "channel": "Reddit 垂直社区 + 邮件候补名单",
+        "hook_message": "昨天好喝的那杯，今天也能复现",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
+      },
+      "failure_conditions": [
+        {
+          "condition": "核心差异被头部竞品快速补齐",
+          "metric_to_watch": "Top 10 中公开“残粉重量 + 粒径一致性”的竞品数",
+          "threshold": ">=3",
+          "action_on_trigger": "recalculate"
+        }
+      ],
+      "data_sources": [
+        "Amazon US Top 10 Snapshot",
+        "Amazon US · 134 条英语/西班牙语评论样本",
+        "Google Trends · United States",
+        "UN Comtrade · HS 8509",
+        "北美航线 FBX"
+      ],
+      "collection_timestamp": "2026-08-15T08:29:28.101467Z",
+      "ai_generated": true,
+      "c2pa_signature": null,
+      "human_review_status": "pending",
+      "human_reviewer": null,
+      "human_reviewed_at": null,
+      "card_specific_data": {
+        "blue_ocean_index": 0.82,
+        "target_market": "US",
+        "differentiation_point": "低残粉 + 刻度复现",
+        "primary_pain": "研磨一致性差",
+        "mock_scope": "coffee_grinder × US"
+      }
+    },
+    {
+      "card_id": "9b581287-a920-43b5-841a-19ecc1981aef",
+      "card_type": "pricing",
+      "version": 1,
+      "action_title": "以 US$67.10 为价值锚，首发测试 US$60–70",
+      "action_detail": "用“残粉重量 + 粒径一致性”支撑价格，不用功能数量支撑价格；首轮目标毛利 33%，物流成本越线时重新计算。",
+      "confidence": "high",
+      "confidence_score": 0.82,
+      "validity_days": 14,
+      "generated_at": "2026-08-15T08:29:28.101601Z",
+      "expires_at": "2026-08-29T08:29:28.101601Z",
+      "evidences": [
+        {
+          "evidence_id": "18600f69-5f45-43b7-bb00-cda512be7ae2",
+          "source_name": "Google Trends · United States",
+          "source_type": "trend",
+          "claim": "“portable coffee grinder”在美国近 90 天搜索热度上升",
+          "raw_value": "+38%",
+          "url": "https://trends.google.com/",
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.89,
+          "verified": false
+        },
+        {
+          "evidence_id": "47676e12-d54f-4df0-a1d0-98a55d78d5d8",
+          "source_name": "Amazon US · 134 条英语/西班牙语评论样本",
+          "source_type": "review",
+          "claim": "43% 的让步评论集中提到“研磨一致性差”",
+          "raw_value": "58 / 134",
+          "url": null,
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.86,
+          "verified": false
+        },
+        {
+          "evidence_id": "61b15de9-af3a-4c6a-aba0-9d5d7c257630",
+          "source_name": "UN Comtrade · HS 8509",
+          "source_type": "customs",
+          "claim": "美国相关品类进口额同比增长",
+          "raw_value": "+18% YoY",
+          "url": "https://comtradeplus.un.org/",
+          "language": "en",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.84,
+          "verified": false
+        },
+        {
+          "evidence_id": "a01f03be-b14a-4572-9af7-847c955f1832",
+          "source_name": "Amazon US Top 10 Snapshot",
+          "source_type": "price",
+          "claim": "Top 10 中仅 1 款把“残粉重量 + 粒径一致性”作为首屏证据",
+          "raw_value": "1 / 10",
+          "url": null,
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.82,
+          "verified": false
+        }
+      ],
+      "private_domain_hook": {
+        "seed_audience": "手冲入门升级、希望每天复现配方的人群",
+        "channel": "Reddit 垂直社区 + 邮件候补名单",
+        "hook_message": "昨天好喝的那杯，今天也能复现",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
+      },
+      "failure_conditions": [
+        {
+          "condition": "物流成本侵蚀目标毛利",
+          "metric_to_watch": "北美航线 FBX 7 日变化",
+          "threshold": ">15%",
+          "action_on_trigger": "recalculate"
+        }
+      ],
+      "data_sources": [
+        "Amazon US Top 10 Snapshot",
+        "Amazon US · 134 条英语/西班牙语评论样本",
+        "Google Trends · United States",
+        "UN Comtrade · HS 8509",
+        "北美航线 FBX"
+      ],
+      "collection_timestamp": "2026-08-15T08:29:28.101467Z",
+      "ai_generated": true,
+      "c2pa_signature": null,
+      "human_review_status": "pending",
+      "human_reviewer": null,
+      "human_reviewed_at": null,
+      "card_specific_data": {
+        "anchor_price": 67.1,
+        "price_range": [
+          60,
+          70
+        ],
+        "gross_margin_pct": 33,
+        "pricing_basis": "残粉重量 + 粒径一致性"
+      }
+    },
+    {
+      "card_id": "cb1a50d8-330a-4f2f-9f10-62af2b114a74",
+      "card_type": "competitive",
+      "version": 1,
+      "action_title": "把“残粉重量 + 粒径一致性”做成首屏证据，而不是泛讲专业研磨",
+      "action_detail": "围绕“研磨一致性差”发布同条件对比、测试方法和原语用户证言，攻击 Top 10 尚未占领的表达空位。",
+      "confidence": "high",
+      "confidence_score": 0.85,
+      "validity_days": 14,
+      "generated_at": "2026-08-15T08:29:28.101624Z",
+      "expires_at": "2026-08-29T08:29:28.101624Z",
+      "evidences": [
+        {
+          "evidence_id": "18600f69-5f45-43b7-bb00-cda512be7ae2",
+          "source_name": "Google Trends · United States",
+          "source_type": "trend",
+          "claim": "“portable coffee grinder”在美国近 90 天搜索热度上升",
+          "raw_value": "+38%",
+          "url": "https://trends.google.com/",
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.89,
+          "verified": false
+        },
+        {
+          "evidence_id": "47676e12-d54f-4df0-a1d0-98a55d78d5d8",
+          "source_name": "Amazon US · 134 条英语/西班牙语评论样本",
+          "source_type": "review",
+          "claim": "43% 的让步评论集中提到“研磨一致性差”",
+          "raw_value": "58 / 134",
+          "url": null,
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.86,
+          "verified": false
+        },
+        {
+          "evidence_id": "61b15de9-af3a-4c6a-aba0-9d5d7c257630",
+          "source_name": "UN Comtrade · HS 8509",
+          "source_type": "customs",
+          "claim": "美国相关品类进口额同比增长",
+          "raw_value": "+18% YoY",
+          "url": "https://comtradeplus.un.org/",
+          "language": "en",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.84,
+          "verified": false
+        },
+        {
+          "evidence_id": "a01f03be-b14a-4572-9af7-847c955f1832",
+          "source_name": "Amazon US Top 10 Snapshot",
+          "source_type": "price",
+          "claim": "Top 10 中仅 1 款把“残粉重量 + 粒径一致性”作为首屏证据",
+          "raw_value": "1 / 10",
+          "url": null,
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.82,
+          "verified": false
+        }
+      ],
+      "private_domain_hook": {
+        "seed_audience": "手冲入门升级、希望每天复现配方的人群",
+        "channel": "Reddit 垂直社区 + 邮件候补名单",
+        "hook_message": "昨天好喝的那杯，今天也能复现",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
+      },
+      "failure_conditions": [
+        {
+          "condition": "竞品开始普遍公开同类证据",
+          "metric_to_watch": "Top 10 “残粉重量 + 粒径一致性”证据覆盖率",
+          "threshold": ">=50%",
+          "action_on_trigger": "watch"
+        }
+      ],
+      "data_sources": [
+        "Amazon US Top 10 Snapshot",
+        "Amazon US · 134 条英语/西班牙语评论样本",
+        "Google Trends · United States",
+        "UN Comtrade · HS 8509",
+        "北美航线 FBX"
+      ],
+      "collection_timestamp": "2026-08-15T08:29:28.101467Z",
+      "ai_generated": true,
+      "c2pa_signature": null,
+      "human_review_status": "pending",
+      "human_reviewer": null,
+      "human_reviewed_at": null,
+      "card_specific_data": {
+        "copy": "昨天好喝的那杯，今天也能复现",
+        "proof_metric": "残粉重量 + 粒径一致性",
+        "expression_gap_pct": 90,
+        "defense_actions": [
+          "公开测试方法",
+          "强化静电控制与易清洁粉道",
+          "保留原语用户证言"
+        ]
+      }
+    },
+    {
+      "card_id": "d43a9ca3-4949-4b18-83ec-41c93c7049de",
+      "card_type": "private_domain",
+      "version": 1,
+      "action_title": "先在Reddit、Facebook Group 与垂直论坛找到 30 个种子用户",
+      "action_detail": "针对“手冲入门升级、希望每天复现配方的人群”投放问题对比素材，用“昨天好喝的那杯，今天也能复现”测试购买意向；达到阈值后再决定首批备货。",
+      "confidence": "high",
+      "confidence_score": 0.9,
+      "validity_days": 14,
+      "generated_at": "2026-08-15T08:29:28.101642Z",
+      "expires_at": "2026-08-29T08:29:28.101642Z",
+      "evidences": [
+        {
+          "evidence_id": "18600f69-5f45-43b7-bb00-cda512be7ae2",
+          "source_name": "Google Trends · United States",
+          "source_type": "trend",
+          "claim": "“portable coffee grinder”在美国近 90 天搜索热度上升",
+          "raw_value": "+38%",
+          "url": "https://trends.google.com/",
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.89,
+          "verified": false
+        },
+        {
+          "evidence_id": "47676e12-d54f-4df0-a1d0-98a55d78d5d8",
+          "source_name": "Amazon US · 134 条英语/西班牙语评论样本",
+          "source_type": "review",
+          "claim": "43% 的让步评论集中提到“研磨一致性差”",
+          "raw_value": "58 / 134",
+          "url": null,
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.86,
+          "verified": false
+        },
+        {
+          "evidence_id": "61b15de9-af3a-4c6a-aba0-9d5d7c257630",
+          "source_name": "UN Comtrade · HS 8509",
+          "source_type": "customs",
+          "claim": "美国相关品类进口额同比增长",
+          "raw_value": "+18% YoY",
+          "url": "https://comtradeplus.un.org/",
+          "language": "en",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.84,
+          "verified": false
+        },
+        {
+          "evidence_id": "a01f03be-b14a-4572-9af7-847c955f1832",
+          "source_name": "Amazon US Top 10 Snapshot",
+          "source_type": "price",
+          "claim": "Top 10 中仅 1 款把“残粉重量 + 粒径一致性”作为首屏证据",
+          "raw_value": "1 / 10",
+          "url": null,
+          "language": "es",
+          "collected_at": "2026-08-15T08:29:28.081420Z",
+          "confidence": 0.82,
+          "verified": false
+        }
+      ],
+      "private_domain_hook": {
+        "seed_audience": "手冲入门升级、希望每天复现配方的人群",
+        "channel": "Reddit 垂直社区 + 邮件候补名单",
+        "hook_message": "昨天好喝的那杯，今天也能复现",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
+      },
+      "failure_conditions": [
+        {
+          "condition": "种子测试未形成有效兴趣",
+          "metric_to_watch": "落地页购买意向率",
+          "threshold": "<5%",
+          "action_on_trigger": "abort"
+        }
+      ],
+      "data_sources": [
+        "Amazon US Top 10 Snapshot",
+        "Amazon US · 134 条英语/西班牙语评论样本",
+        "Google Trends · United States",
+        "UN Comtrade · HS 8509",
+        "北美航线 FBX"
+      ],
+      "collection_timestamp": "2026-08-15T08:29:28.101467Z",
+      "ai_generated": true,
+      "c2pa_signature": null,
+      "human_review_status": "pending",
+      "human_reviewer": null,
+      "human_reviewed_at": null,
+      "card_specific_data": {
+        "gathering_places": [
+          "Reddit、Facebook Group 与垂直论坛",
+          "Amazon US"
+        ],
+        "repurchase_signal_strength": "medium",
+        "validation_sample": 30
+      }
+    }
+  ],
+  "pain_points": [
+    {
+      "pain_type": "consistency",
+      "label": "研磨一致性差",
+      "mentions": 58,
+      "sentiment_intensity": 0.88,
+      "opportunity_index": 0.86,
+      "hidden_pain": true,
+      "languages": [
+        "es",
+        "en"
+      ],
+      "sample_original": "Me gusta mucho este producto, pero la molienda cambia en cada uso.",
+      "sample_translation": "我很喜欢这个portable coffee grinder，但研磨一致性差。"
+    },
+    {
+      "pain_type": "static",
+      "label": "静电飞粉",
+      "mentions": 47,
+      "sentiment_intensity": 0.79,
+      "opportunity_index": 0.74,
+      "hidden_pain": true,
+      "languages": [
+        "es",
+        "en"
+      ],
+      "sample_original": "Me gusta mucho este producto, pero el polvo se pega y vuela por todas partes.",
+      "sample_translation": "我很喜欢这个portable coffee grinder，但静电飞粉。"
+    },
+    {
+      "pain_type": "retention",
+      "label": "残粉过多",
+      "mentions": 35,
+      "sentiment_intensity": 0.75,
+      "opportunity_index": 0.68,
+      "hidden_pain": true,
+      "languages": [
+        "es",
+        "en"
+      ],
+      "sample_original": "Me gusta mucho este producto, pero retiene demasiado café dentro.",
+      "sample_translation": "我很喜欢这个portable coffee grinder，但残粉过多。"
+    },
+    {
+      "pain_type": "noise",
+      "label": "晨间噪音",
+      "mentions": 23,
+      "sentiment_intensity": 0.61,
+      "opportunity_index": 0.43,
+      "hidden_pain": true,
+      "languages": [
+        "es",
+        "en"
+      ],
+      "sample_original": "Me gusta mucho este producto, pero hace demasiado ruido por la mañana.",
+      "sample_translation": "我很喜欢这个portable coffee grinder，但晨间噪音。"
+    }
+  ],
+  "supply_signals": [
+    {
+      "signal_type": "customs",
+      "label": "美国相关品类进口需求",
+      "current_value": 18.0,
+      "unit": "%",
+      "change_pct": 18.0,
+      "period": "YoY",
+      "status": "positive",
+      "source": "UN Comtrade"
+    },
+    {
+      "signal_type": "freight",
+      "label": "北美航线 FBX",
+      "current_value": 2470.0,
+      "unit": "USD/FEU",
+      "change_pct": 4.8,
+      "period": "30d",
+      "status": "watch",
+      "source": "FBX / reference index"
+    },
+    {
+      "signal_type": "fx",
+      "label": "USD 指数",
+      "current_value": 103.2,
+      "unit": "DXY",
+      "change_pct": 0.8,
+      "period": "7d",
+      "status": "stable",
+      "source": "Reference FX"
+    }
+  ],
+  "evidence_count": 5,
+  "agents_completed": [
+    "collector",
+    "review-analyzer",
+    "market-analyzer",
+    "supply-chain-analyzer",
+    "decision-compiler",
+    "safety-evaluator"
+  ],
+  "mode": "mock",
+  "started_at": "2026-08-15T08:29:28.030319Z",
+  "completed_at": "2026-08-15T08:29:28.117434Z",
+  "trace_id": "0268ba00-3351-4e4b-a50b-c456da10fae4"
+}

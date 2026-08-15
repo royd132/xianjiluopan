@@ -39,6 +39,31 @@ def test_event_trace_and_feedback_memory(tmp_path):
     asyncio.run(scenario())
 
 
+def test_scenario_aware_cold_start_keeps_category_and_market_consistent(tmp_path):
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+
+        coffee = await runtime.run(ResearchRequest(category="portable coffee grinder", market="US"))
+        coffee_text = " ".join(f"{card.action_title} {card.action_detail}" for card in coffee.cards)
+        assert "美国市场" in coffee_text
+        assert "巴西" not in coffee_text
+        assert "养宠" not in coffee_text
+        assert "低残粉" in coffee_text
+        assert any("Amazon US" in source for card in coffee.cards for source in card.data_sources)
+        assert any("美国" in signal.label or "北美" in signal.label for signal in coffee.supply_signals)
+        assert coffee.pain_points[0].pain_type == "consistency"
+        assert all(not evidence.verified for card in coffee.cards for evidence in card.evidences)
+
+        blender = await runtime.run(ResearchRequest(category="便携榨汁机", market="MX"))
+        blender_text = " ".join(f"{card.action_title} {card.action_detail}" for card in blender.cards)
+        assert "墨西哥市场" in blender_text
+        assert "防漏" in blender_text
+        assert "夜间噪音" not in blender_text
+        assert blender.pain_points[0].pain_type == "leakage"
+
+    asyncio.run(scenario())
+
+
 def test_rejected_card_creates_gated_policy_candidate(tmp_path):
     async def scenario():
         runtime = ForesightRuntime(tmp_path / ".foresight")

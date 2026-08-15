@@ -4,9 +4,8 @@ import asyncio
 import statistics
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Any
 
-from .data import MockDataProvider, default_pain_points, default_supply_signals
+from .data import MockDataProvider
 from .events import CollaborationBlackboard, EventType, RuntimeEvent
 from .harness import AgentHarness
 from .models import (
@@ -41,13 +40,7 @@ class CollectorAgent(BaseAgent):
         self.provider = provider
 
     async def run(self, request: ResearchRequest, board: CollaborationBlackboard, harness: AgentHarness, trace_id: str) -> None:
-        raw = await harness.call_tool(
-            "mock_data",
-            self.name,
-            trace_id,
-            board.task_id,
-            request=request,
-        )
+        raw = await harness.call_tool("mock_data", self.name, trace_id, board.task_id, request=request)
         await board.publish_artifact("raw_market_data", raw, self.name)
         await board.publish_artifact("evidences", raw["evidences"], self.name)
 
@@ -59,9 +52,8 @@ class MultilingualReviewAgent(BaseAgent):
         raw = board.read("raw_market_data")
         if not raw:
             raise RuntimeError("Review agent requires raw_market_data")
-        pains = default_pain_points()
         concessions = [review for review in raw["reviews"] if review["hidden_pain"]]
-        await board.publish_artifact("pain_points", pains, self.name)
+        await board.publish_artifact("pain_points", raw["pain_points"], self.name)
         await board.publish_artifact("hidden_pain_reviews", concessions, self.name)
 
 
@@ -75,13 +67,14 @@ class MarketAnalysisAgent(BaseAgent):
             raise RuntimeError("Market analyzer requires raw_market_data")
         prices = sorted(raw["prices"])
         q = statistics.quantiles(prices, n=4, method="inclusive")
+        scenario = raw["scenario"]
         metrics = {
             "price_p25": q[0],
             "price_median": statistics.median(prices),
             "price_p75": q[2],
-            "anchor_price": 49.9,
-            "blue_ocean_index": 0.86,
-            "top10_silent_competitors": 0,
+            "anchor_price": scenario["anchor_price"],
+            "blue_ocean_index": scenario["blue_ocean_index"],
+            "top10_gap_competitors": scenario["gap_competitors"],
         }
         await board.publish_artifact("market_metrics", metrics, self.name)
 
@@ -91,9 +84,8 @@ class SupplyChainAgent(BaseAgent):
 
     async def run(self, request: ResearchRequest, board: CollaborationBlackboard, harness: AgentHarness, trace_id: str) -> None:
         raw = board.read("raw_market_data")
-        signals = default_supply_signals()
         risk = raw["freight"]["change_30d_pct"] >= raw["freight"]["threshold_pct"]
-        await board.publish_artifact("supply_signals", signals, self.name)
+        await board.publish_artifact("supply_signals", raw["supply_signals"], self.name)
         await board.publish_artifact("supply_risk_triggered", risk, self.name)
 
 
@@ -104,57 +96,71 @@ class DecisionCompilerAgent(BaseAgent):
         evidences = board.read("evidences")
         pains = board.read("pain_points")
         metrics = board.read("market_metrics")
-        if not (evidences and pains and metrics):
+        raw = board.read("raw_market_data")
+        if not (evidences and pains and metrics and raw):
             raise RuntimeError("Decision compiler is blocked on evidence, pain points and market metrics")
+
+        scenario = raw["scenario"]
+        lead_pain = pains[0]
+        anchor = metrics["anchor_price"]
+        launch_low = round(anchor * 0.90)
+        launch_high = round(anchor * 1.05)
+        gap_limit = max(2, scenario["gap_competitors"] + 2)
         now = datetime.now(timezone.utc)
         common = {
             "evidences": evidences[:4],
             "collection_timestamp": now,
             "data_sources": sorted({item.source_name for item in evidences}),
         }
+        hook = PrivateDomainHook(
+            seed_audience=scenario["seed_audience"],
+            channel=scenario["channel"],
+            hook_message=scenario["hook_message"],
+            expected_conversion_hint="先完成 30 份意向测试与 5 次深访，再决定首批备货",
+        )
         cards = [
             DecisionCard(
                 card_type=CardType.PRODUCT_SELECTION,
-                action_title=f"做静音款{request.category}，切入巴西市场",
-                action_detail="主打夜间运行不扰眠，并把易拆洗作为第二差异点。",
+                action_title=f'优先验证“{scenario["differentiator"]}”的{request.category}，进入{scenario["market_name"]}市场',
+                action_detail=f'把“{lead_pain.label}”作为第一问题，用{scenario["secondary_differentiator"]}构成第二道差异；先验证需求，再开模或备货。',
                 confidence=ConfidenceLevel.HIGH,
-                confidence_score=0.88,
-                private_domain_hook=PrivateDomainHook(seed_audience="养宠且夜班/浅眠人群", channel="WhatsApp 本地养宠群", hook_message="让它半夜别吵醒你", expected_conversion_hint="先进行 30 份意向测试"),
-                failure_conditions=[FailureCondition(condition="静音卖点被快速补齐", metric_to_watch="Top10 静音款数量", threshold=">=2", action_on_trigger="recalculate")],
-                card_specific_data={"blue_ocean_index": metrics["blue_ocean_index"], "target_market": request.market, "differentiation_point": "低于30dB + 易拆洗"},
+                confidence_score=round(0.72 + metrics["blue_ocean_index"] * 0.18, 2),
+                private_domain_hook=hook,
+                failure_conditions=[FailureCondition(condition="核心差异被头部竞品快速补齐", metric_to_watch=f'Top 10 中公开“{scenario["proof_metric"]}”的竞品数', threshold=f">={gap_limit}", action_on_trigger="recalculate")],
+                card_specific_data={"blue_ocean_index": metrics["blue_ocean_index"], "target_market": request.market.upper(), "differentiation_point": scenario["differentiator"], "primary_pain": lead_pain.label, "mock_scope": scenario["mock_scope"]},
                 **common,
             ),
             DecisionCard(
                 card_type=CardType.PRICING,
-                action_title="锚定 US$49.90，首发价控制在 US$44–52",
-                action_detail="以静音电机和易拆洗结构支撑约 18% 溢价，目标毛利 31%。",
+                action_title=f"以 US${anchor:.2f} 为价值锚，首发测试 US${launch_low}–{launch_high}",
+                action_detail=f'用“{scenario["proof_metric"]}”支撑价格，不用功能数量支撑价格；首轮目标毛利 {scenario["gross_margin_pct"]}%，物流成本越线时重新计算。',
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.82,
-                private_domain_hook=PrivateDomainHook(seed_audience="已购买自动喂食器且抱怨噪音的人群", channel="WhatsApp/邮件候补名单", hook_message="安静升级，不增加夜间负担"),
-                failure_conditions=[FailureCondition(condition="物流成本侵蚀毛利", metric_to_watch="FBX 南美运价 7 日变化", threshold=">15%", action_on_trigger="recalculate")],
-                card_specific_data={"anchor_price": 49.9, "price_range": [44, 52], "gross_margin_pct": 31},
+                private_domain_hook=hook,
+                failure_conditions=[FailureCondition(condition="物流成本侵蚀目标毛利", metric_to_watch=scenario["freight_metric"], threshold=">15%", action_on_trigger="recalculate")],
+                card_specific_data={"anchor_price": anchor, "price_range": [launch_low, launch_high], "gross_margin_pct": scenario["gross_margin_pct"], "pricing_basis": scenario["proof_metric"]},
                 **common,
             ),
             DecisionCard(
                 card_type=CardType.COMPETITIVE,
-                action_title="把分贝数变成可验证卖点，而不是泛讲智能",
-                action_detail="详情页首屏展示夜间运行分贝对比，攻击 Top10 的共同表达空位。",
+                action_title=f'把“{scenario["proof_metric"]}”做成首屏证据，而不是泛讲{scenario["generic_promise"]}',
+                action_detail=f'围绕“{lead_pain.label}”发布同条件对比、测试方法和原语用户证言，攻击 Top 10 尚未占领的表达空位。',
                 confidence=ConfidenceLevel.HIGH,
                 confidence_score=0.85,
-                private_domain_hook=PrivateDomainHook(seed_audience="对睡眠和宠物作息敏感的养宠用户", channel="TikTok Shop 内容 + WhatsApp 群", hook_message="听得见的差异，低于30dB"),
-                failure_conditions=[FailureCondition(condition="竞品开始普遍公开分贝参数", metric_to_watch="Top10 分贝参数覆盖率", threshold=">=50%", action_on_trigger="watch")],
-                card_specific_data={"copy": "夜间不扰眠，定时喂养更安心", "defense_actions": ["公开分贝测试", "强化易拆洗结构", "保留原语用户证言"]},
+                private_domain_hook=hook,
+                failure_conditions=[FailureCondition(condition="竞品开始普遍公开同类证据", metric_to_watch=f'Top 10 “{scenario["proof_metric"]}”证据覆盖率', threshold=">=50%", action_on_trigger="watch")],
+                card_specific_data={"copy": scenario["hook_message"], "proof_metric": scenario["proof_metric"], "expression_gap_pct": max(10, (10 - scenario["gap_competitors"]) * 10), "defense_actions": ["公开测试方法", f'强化{scenario["secondary_differentiator"]}', "保留原语用户证言"]},
                 **common,
             ),
             DecisionCard(
                 card_type=CardType.PRIVATE_DOMAIN,
-                action_title="用养宠 + 夜班/浅眠人群完成首轮种子验证",
-                action_detail="在巴西本地 WhatsApp 养宠群投放静音对比素材，先验证卖点再备货。",
+                action_title=f'先在{scenario["community"]}找到 30 个种子用户',
+                action_detail=f'针对“{scenario["seed_audience"]}”投放问题对比素材，用“{scenario["hook_message"]}”测试购买意向；达到阈值后再决定首批备货。',
                 confidence=ConfidenceLevel.HIGH,
-                confidence_score=0.91,
-                private_domain_hook=PrivateDomainHook(seed_audience="养宠 + 夜班/浅眠人群", channel="WhatsApp 巴西本地养宠群", hook_message="让它半夜别吵醒你", expected_conversion_hint="30份意向 + 5次深访"),
-                failure_conditions=[FailureCondition(condition="种子测试未形成有效兴趣", metric_to_watch="落地页意向率", threshold="<5%", action_on_trigger="abort")],
-                card_specific_data={"gathering_places": ["WhatsApp 养宠群", "Facebook 本地猫犬社区"], "repurchase_signal_strength": "strong"},
+                confidence_score=0.90,
+                private_domain_hook=hook,
+                failure_conditions=[FailureCondition(condition="种子测试未形成有效兴趣", metric_to_watch="落地页购买意向率", threshold="<5%", action_on_trigger="abort")],
+                card_specific_data={"gathering_places": [scenario["community"], scenario["marketplace"]], "repurchase_signal_strength": scenario["repurchase_signal"], "validation_sample": 30},
                 **common,
             ),
         ]
@@ -172,16 +178,7 @@ class SafetyEvaluationAgent(BaseAgent):
         if not outcome.accepted:
             raise ValueError("Decision gate rejected cards: " + "; ".join(outcome.failures))
         await board.publish_artifact("decision_cards", outcome.cards, self.name)
-        await board.publish_artifact(
-            "evaluation",
-            {
-                "passed": True,
-                "score": 0.91,
-                "checks": outcome.checks,
-                "policy_version": policy_snapshot.get("version", "embedded-default"),
-            },
-            self.name,
-        )
+        await board.publish_artifact("evaluation", {"passed": True, "score": 0.91, "checks": outcome.checks, "policy_version": policy_snapshot.get("version", "embedded-default")}, self.name)
         await board.publish_event(RuntimeEvent(EventType.GATE_PASSED, board.task_id, self.name, "All decision cards passed the HITL preflight gate", {"cards": len(outcome.cards), "policy_version": policy_snapshot.get("version", "embedded-default")}))
 
 

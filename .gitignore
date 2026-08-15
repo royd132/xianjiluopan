@@ -5,6 +5,7 @@ dist/
 .foresight/
 reports/*.json
 !reports/demo.json
+!reports/demo_us_coffee.json
 __pycache__/
 .pytest_cache/
 *.egg-info/
