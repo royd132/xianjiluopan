@@ -158,7 +158,7 @@ Runtime 采用分阶段并行：采集完成后，评论分析、市场分析和
 
 ## 🧠 Harness、热插拔与自进化
 
-先机罗盘采用 **EvoAgent 式可靠内核 + DSH 式扩展平面**。节点恢复、Run Ledger 和演进门禁保持稳定；Provider、Tool、Evaluator、Policy Pack 与 Agent Adapter 位于可替换层。
+先机罗盘采用 **可恢复 Agent 运行内核 + DSH 式扩展平面**。节点恢复、Run Ledger 和演进门禁保持稳定；Provider、Tool、Evaluator、Policy Pack 与 Agent Adapter 位于可替换层。
 
 | 模块 | 当前实现 | 作用 |
 |---|---|---|
