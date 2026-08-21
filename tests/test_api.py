@@ -15,7 +15,9 @@ def test_runtime_extensions_endpoint():
     assert response.status_code == 200
     plugins = response.json()["plugins"]
     assert any(plugin["plugin_id"] == "provider.mock-data" for plugin in plugins)
-    assert response.json()["supported_modes"] == ["mock"]
+    assert any(plugin["plugin_id"] == "provider.real-data" for plugin in plugins)
+    assert "mock" in response.json()["supported_modes"]
+    assert "real_data" in response.json()
 
 
 def test_research_endpoint_rejects_unavailable_real_mode():

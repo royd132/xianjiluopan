@@ -87,8 +87,8 @@ const demoCards = [
     confidence: 88,
     title: '做「静音款」宠物自动喂食器，切入巴西市场',
     summary: '主打夜间不吵醒主人，避开容量与联网功能的正面价格战。',
-    metric: '蓝海指数',
-    metricValue: '8.6',
+    metric: '机会分',
+    metricValue: '86',
     source: '5 个数据源',
   },
   {
@@ -135,7 +135,7 @@ const demoCards = [
 ];
 
 const cardPresentation = {
-  product_selection: { id: 'product', type: '选品方向', icon: PackageSearch, tone: 'blue', metric: '蓝海指数' },
+  product_selection: { id: 'product', type: '选品方向', icon: PackageSearch, tone: 'blue', metric: '机会分' },
   pricing: { id: 'pricing', type: '定价策略', icon: CircleDollarSign, tone: 'amber', metric: '建议毛利' },
   competitive: { id: 'competitive', type: '竞争打法', icon: Target, tone: 'violet', metric: '表达空位' },
   private_domain: { id: 'private', type: '私域人群', icon: Users, tone: 'green', metric: '复购信号' },
@@ -146,9 +146,9 @@ function mapRuntimeCards(runtimeCards) {
     const presentation = cardPresentation[card.card_type];
     const data = card.card_specific_data || {};
     let metricValue = '—';
-    if (card.card_type === 'product_selection') metricValue = String(Math.round((data.blue_ocean_index || 0.86) * 100) / 10);
+    if (card.card_type === 'product_selection') metricValue = String(Math.round((data.opportunity_score ?? data.blue_ocean_index ?? 0) * 100));
     if (card.card_type === 'pricing') metricValue = `${data.gross_margin_pct || 31}%`;
-    if (card.card_type === 'competitive') metricValue = `${data.expression_gap_pct || 72}%`;
+    if (card.card_type === 'competitive') metricValue = data.listing_audit_required ? '待审计' : `${data.expression_gap_pct ?? 0}%`;
     if (card.card_type === 'private_domain') metricValue = data.repurchase_signal_strength === 'strong' ? '强' : '中';
     return {
       ...presentation,
@@ -168,7 +168,8 @@ function mapRuntimeCards(runtimeCards) {
   });
 }
 
-const evidenceTypeLabels = { trend: '趋势', review: '评论', customs: '海关', freight: '运价', price: '竞品价格', social: '社媒' };
+const evidenceTypeLabels = { trend: '趋势', review: '评论', customs: '海关', freight: '运价', shipping: '航运', fx: '汇率', price: '商品价格', social: '社媒', model_trace: '模型轨迹' };
+const reportModeLabels = { mock: '场景化 Mock', hybrid: '公开数据 + 明示回退', real: '真实数据 + Qwen', 'mock-offline': '离线固定样例' };
 const painPositions = [
   { x: 18, y: 22, size: 58, color: '#2563eb' },
   { x: 48, y: 42, size: 43, color: '#059669' },
@@ -207,7 +208,7 @@ function mapRuntimeReviews(items, marketName) {
   return Object.fromEntries(items.map((item) => [item.pain_type, {
     original: item.sample_original,
     translation: item.sample_translation,
-    meta: `${item.languages.join(' / ')} · ${marketName} · Mock 原语样本`,
+    meta: `${item.languages.join(' / ')} · ${marketName} · ${item.extracted_by === 'llm' ? 'Qwen 源记录回指' : item.extracted_by === 'keyword' ? '规则源记录抽取' : 'Mock 样本'}`,
   }]));
 }
 
@@ -290,6 +291,8 @@ function App() {
   const [market, setMarket] = useState('BR');
   const [query, setQuery] = useState('宠物自动喂食器');
   const [mode, setMode] = useState('evidence');
+  const [researchMode, setResearchMode] = useState('mock');
+  const [supportedModes, setSupportedModes] = useState(['mock']);
   const [running, setRunning] = useState(false);
   const [agentStep, setAgentStep] = useState(4);
   const [selectedCard, setSelectedCard] = useState(null);
@@ -321,7 +324,7 @@ function App() {
   const pricingFailure = decisionCards.find((card) => card.id === 'pricing')?.failureConditions?.[0];
   const productDecision = decisionCards.find((card) => card.id === 'product') || demoCards[0];
   const competitiveDecision = decisionCards.find((card) => card.id === 'competitive') || demoCards[2];
-  const opportunityScore = Math.round(Number(decisionCards.find((card) => card.id === 'product')?.metricValue || 8.6) * 10);
+  const opportunityScore = Math.round(Number(decisionCards.find((card) => card.id === 'product')?.metricValue || 86));
   const leadPain = insightPainPoints[0] || demoPainPoints[0];
   const demandSignal = insightSupplySignals[0] || demoSupplySignals[0];
 
@@ -364,7 +367,10 @@ function App() {
         if (!response.ok) throw new Error('runtime unavailable');
         return response.json();
       })
-      .then(() => {
+      .then((payload) => {
+        const modes = payload.supported_modes || ['mock'];
+        setSupportedModes(modes);
+        setResearchMode(modes.includes('real') ? 'real' : modes.includes('hybrid') ? 'hybrid' : 'mock');
         setRuntimeState('connected');
         setRuntimeMessage('多 Agent Runtime 已连接');
         loadEvolution();
@@ -439,8 +445,14 @@ function App() {
     });
     source.addEventListener('task.failed', () => {
       source.close();
-      setToast('Runtime 任务失败，已切换离线演示');
-      runLocalFallback();
+      if (researchMode === 'mock') {
+        setToast('Mock Runtime 任务失败，已切换离线演示');
+        runLocalFallback();
+        return;
+      }
+      setRunning(false);
+      setRuntimeMessage(`${researchMode === 'real' ? '真实' : '混合'}任务失败，未静默降级`);
+      setToast('数据或模型未满足当前模式合同，请查看后端任务事件');
     });
   };
 
@@ -456,7 +468,7 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/api/v1/research`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: query, market, mode: 'mock', languages: ['pt', 'en', 'es'] }),
+        body: JSON.stringify({ category: query, market, mode: researchMode, languages: ['pt', 'en', 'es'] }),
       });
       if (!response.ok) throw new Error('runtime unavailable');
       const payload = await response.json();
@@ -464,7 +476,13 @@ function App() {
       setRuntimeMessage(`任务 ${payload.task_id.slice(0, 8)} 已进入协作黑板`);
       connectRuntimeEvents(payload.task_id);
     } catch {
-      runLocalFallback();
+      if (researchMode === 'mock') {
+        runLocalFallback();
+        return;
+      }
+      setRunning(false);
+      setRuntimeMessage(`${researchMode === 'real' ? '真实' : '混合'}任务未启动，未静默降级`);
+      setToast('当前模式不可用，请检查数据缓存、Qwen 或后端连接');
     }
   };
 
@@ -601,7 +619,7 @@ function App() {
         <div className="sidebar-section-label">工作空间</div>
         <button className="workspace-switcher" onClick={() => setToast('当前为 Demo 工作空间')}>
           <span className="workspace-avatar">D</span>
-          <span><strong>Demo 空间</strong><small>冷启动数据模式</small></span>
+          <span><strong>Demo 空间</strong><small>{reportModeLabels[researchMode]}</small></span>
           <ChevronDown size={16} />
         </button>
         <div className="sidebar-foot">
@@ -649,6 +667,7 @@ function App() {
             <div className="query-options">
               <div className="quick-tags"><span>快速开始</span>{['宠物喂食器', '便携榨汁机', '降噪耳机'].map((tag) => <button key={tag} onClick={() => setQuery(tag)}>{tag}</button>)}</div>
               <div className="market-picker"><span>目标市场</span>{markets.map((item) => <button key={item.code} className={market === item.code ? 'active' : ''} onClick={() => setMarket(item.code)}><b>{item.code}</b>{item.name}</button>)}</div>
+              <div className="market-picker data-mode-picker"><span>数据模式</span>{['real', 'hybrid', 'mock'].map((item) => <button key={item} disabled={!supportedModes.includes(item)} className={researchMode === item ? 'active' : ''} onClick={() => setResearchMode(item)}>{reportModeLabels[item]}</button>)}</div>
             </div>
           </section>
 
@@ -675,7 +694,7 @@ function App() {
               {/(宠物|喂食|pet|feeder)/i.test(reportCategory)
                 ? <img src={productImage} alt="宠物自动喂食器演示概念" />
                 : <span className="report-product-placeholder"><PackageSearch size={26} /></span>}
-              <div><span className="eyebrow">机会报告 · {selectedReportMarket?.code} · {reportMode === 'mock' ? '场景化 Mock' : '离线固定样例'}</span><h2>{reportCategory}</h2><p>{selectedReportMarket?.name}市场 · 本次任务完成于 {formatReportTime(reportGeneratedAt)}</p></div>
+              <div><span className="eyebrow">机会报告 · {selectedReportMarket?.code} · {reportModeLabels[reportMode] || reportMode}</span><h2>{reportCategory}</h2><p>{selectedReportMarket?.name}市场 · 本次任务完成于 {formatReportTime(reportGeneratedAt)}</p></div>
             </div>
             <div className="report-actions">
               <button className="secondary-button" onClick={exportReport}><Download size={16} />导出</button>
@@ -716,7 +735,7 @@ function App() {
 
           <section className="insight-grid">
             <article className="panel radar-panel" id="pain-radar">
-              <div className="panel-head"><div><span className="eyebrow">原语洞察</span><h2>“我喜欢，但是…” 痛点雷达</h2></div><span className="mock-pill">Mock 原语样本</span></div>
+              <div className="panel-head"><div><span className="eyebrow">原语洞察</span><h2>“我喜欢，但是…” 痛点雷达</h2></div><span className="mock-pill">{reportMode === 'real' ? '源记录回指' : reportMode === 'hybrid' ? '公开数据优先' : 'Mock 原语样本'}</span></div>
               <div className="radar-body">
                 <div className="bubble-chart" aria-label="痛点机会气泡图">
                   <div className="axis-label y-label">提及频次 × 情感强度</div><div className="axis-label x-label">差异化可行性 →</div>
@@ -737,14 +756,14 @@ function App() {
               <div className="supply-list">
                 {insightSupplySignals.map((signal) => <div className="supply-row" key={signal.name}><div><span className={`status-dot ${signal.state}`} /><p><strong>{signal.name}</strong><small>{signal.note}</small></p></div><MiniBars values={signal.bars} state={signal.state} /><strong>{signal.value}</strong></div>)}
               </div>
-              <div className="alert-card"><AlertTriangle size={18} /><div><strong>反向条件已登记</strong><p>{pricingFailure ? `${pricingFailure.metric_to_watch} ${pricingFailure.threshold} 时重新计算定价。` : '真实数据 Provider 接入后按阈值触发重新计算。'}</p></div><button onClick={() => setToast('阈值已进入决策卡；实时触发器属于下一阶段')}>待接入</button></div>
+              <div className="alert-card"><AlertTriangle size={18} /><div><strong>反向条件已登记</strong><p>{pricingFailure ? `${pricingFailure.metric_to_watch} ${pricingFailure.threshold} 时重新计算定价。` : '定时增量任务完成后按阈值触发重新计算。'}</p></div><button onClick={() => setToast('阈值已进入决策卡；定时触发器属于下一阶段')}>待接入</button></div>
             </article>
           </section>
 
           <section className="evidence-panel">
             <div className="panel-head"><div><span className="eyebrow">可追溯依据</span><h2>这项决策，凭什么？</h2></div><span className="verified-pill"><ShieldCheck size={15} />{reportEvidence.length} 条结构校验通过</span></div>
             <div className="evidence-table">
-              {reportEvidence.map((item, index) => <button key={item.source} onClick={() => item.url ? window.open(item.url, '_blank', 'noopener,noreferrer') : setToast(`Mock 来源：${item.source}`)}><span className="evidence-index">{String(index + 1).padStart(2, '0')}</span><span className="evidence-source"><small>{item.type}</small><strong>{item.source}</strong></span><span className="evidence-claim">{item.claim}</span><strong className="evidence-value">{item.value}</strong><span className="evidence-open"><ExternalLink size={15} /></span></button>)}
+              {reportEvidence.map((item, index) => <button key={item.source} onClick={() => item.url ? window.open(item.url, '_blank', 'noopener,noreferrer') : setToast(`来源记录：${item.source}`)}><span className="evidence-index">{String(index + 1).padStart(2, '0')}</span><span className="evidence-source"><small>{item.type}</small><strong>{item.source}</strong></span><span className="evidence-claim">{item.claim}</span><strong className="evidence-value">{item.value}</strong><span className="evidence-open"><ExternalLink size={15} /></span></button>)}
             </div>
           </section>
 
@@ -784,11 +803,11 @@ function App() {
             </div>
           </section>
 
-          <footer><span><Compass size={15} />先机罗盘 · 决策可追溯，结论可证伪</span><span>数据模式：场景化 Mock 冷启动 · 非真实实时市场结果</span></footer>
+          <footer><span><Compass size={15} />先机罗盘 · 决策可追溯，结论可证伪</span><span>数据模式：{reportModeLabels[reportMode] || reportMode}{reportMode === 'real' ? ' · 当前竞品价仍需授权源' : ''}</span></footer>
         </div>
       </main>
 
-      {selectedCard && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedCard(null)}><div className="card-modal" role="dialog" aria-modal="true" aria-label={`${selectedCard.type}详情`}><button className="modal-close icon-button" onClick={() => setSelectedCard(null)}><X size={19} /></button><CardDetail card={selectedCard} onCopy={copyText} onReview={setReview} reviewStatus={reviewStatus} evidence={reportEvidence} reportMarket={reportMarket} generatedAt={reportGeneratedAt} /></div></div>}
+      {selectedCard && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedCard(null)}><div className="card-modal" role="dialog" aria-modal="true" aria-label={`${selectedCard.type}详情`}><button className="modal-close icon-button" onClick={() => setSelectedCard(null)}><X size={19} /></button><CardDetail card={selectedCard} onCopy={copyText} onReview={setReview} reviewStatus={reviewStatus} evidence={reportEvidence} reportMarket={reportMarket} generatedAt={reportGeneratedAt} reportMode={reportMode} /></div></div>}
 
       {historyOpen && <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setHistoryOpen(false)}><aside className="history-drawer"><div className="drawer-head"><div><span className="eyebrow">工作记录</span><h2>历史洞察</h2></div><button className="icon-button" onClick={() => setHistoryOpen(false)}><X size={18} /></button></div>{[
         ['宠物自动喂食器', '巴西', '刚刚', '86'], ['便携榨汁机', '墨西哥', '昨天', '74'], ['降噪耳机', '日本', '8月10日', '69'],
@@ -798,7 +817,7 @@ function App() {
   );
 }
 
-function CardDetail({ card, onCopy, onReview, reviewStatus, evidence, reportMarket, generatedAt }) {
+function CardDetail({ card, onCopy, onReview, reviewStatus, evidence, reportMarket, generatedAt, reportMode }) {
   const Icon = card.icon;
   const detailEvidence = card.runtimeCard ? mapRuntimeEvidence([card.runtimeCard]).slice(0, 3) : evidence.slice(0, 3);
   const reportCode = `FC-${reportMarket}-${new Date(generatedAt).toISOString().slice(2, 10).replaceAll('-', '')}`;
@@ -808,7 +827,7 @@ function CardDetail({ card, onCopy, onReview, reviewStatus, evidence, reportMark
       <div className="action-box"><span>行动指令</span><p>{card.summary}</p></div>
       <div className="detail-section"><h3><BookOpen size={17} />凭什么 <span>证据链 · {detailEvidence.length} 条</span></h3>{detailEvidence.map((item) => <div className="detail-evidence" key={item.source}><BadgeCheck size={16} /><div><strong>{item.claim}</strong><small>{item.source}</small></div><b>{item.value}</b></div>)}</div>
       <div className="detail-two-col"><div className="detail-section hook-box"><h3><Users size={17} />种子验证</h3><p><b>种子人群</b> {card.hook?.audience}</p><p><b>承接渠道</b> {card.hook?.channel}</p><div className="copy-hook"><span>{card.hook?.message}</span><button onClick={() => onCopy(card.hook?.message)}><Clipboard size={15} />复制</button></div></div><div className="detail-section failure-box"><h3><AlertTriangle size={17} />什么时候失效</h3>{(card.failureConditions || [{ condition: '关键市场信号越过阈值' }]).slice(0, 2).map((item) => <p key={item.condition}>{item.condition}</p>)}<button><Bell size={15} />失效条件已登记</button></div></div>
-      <div className="modal-compliance"><ShieldCheck size={17} /><span>AI 生成 · 场景化 Mock · 需人工复核<small>{detailEvidence.map((item) => item.source).join(' / ')} · 任务完成于 {formatReportTime(generatedAt)}</small></span></div>
+      <div className="modal-compliance"><ShieldCheck size={17} /><span>AI 生成 · {reportModeLabels[reportMode] || reportMode} · 需人工复核<small>{detailEvidence.map((item) => item.source).join(' / ')} · 任务完成于 {formatReportTime(generatedAt)}</small></span></div>
       <div className="modal-actions"><span>复核这张卡</span><div><button className={reviewStatus === 'approved' ? 'active approved' : ''} onClick={() => onReview('approved')}><CheckCircle2 size={16} />采纳</button><button className={reviewStatus === 'discussed' ? 'active discussed' : ''} onClick={() => onReview('discussed')}><MessageCircleMore size={16} />待议</button><button className={reviewStatus === 'rejected' ? 'active rejected' : ''} onClick={() => onReview('rejected')}><XCircle size={16} />驳回</button></div></div>
     </div>
   );

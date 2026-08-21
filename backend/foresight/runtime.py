@@ -30,6 +30,7 @@ from .models import (
     ReviewRequest,
     SupplySignal,
 )
+from .real_data_provider import RealDataProvider
 
 
 class UnsupportedResearchModeError(ValueError):
@@ -39,14 +40,19 @@ class UnsupportedResearchModeError(ValueError):
 class ForesightRuntime:
     """Event-driven coordinator backed by a resumable node runtime."""
 
-    workflow_version = "foresight-workflow-v2"
-    supported_modes = frozenset({"mock"})
+    workflow_version = "foresight-workflow-v3"
 
-    def __init__(self, workdir: Path | str = ".foresight") -> None:
+    def __init__(
+        self,
+        workdir: Path | str = ".foresight",
+        datasets_dir: Path | str = "datasets",
+        real_provider: RealDataProvider | None = None,
+    ) -> None:
         self.harness = AgentHarness(workdir)
         self.flywheel = FeedbackFlywheel(self.harness.memory)
         self.evolution = EvolutionEngine(self.harness.memory)
         self.provider = MockDataProvider()
+        self.real_provider = real_provider or RealDataProvider(datasets_dir)
         self.boards: dict[str, CollaborationBlackboard] = {}
         self.tasks: dict[str, asyncio.Task[ResearchResult]] = {}
         self.results: dict[str, ResearchResult] = {}
@@ -59,6 +65,24 @@ class ForesightRuntime:
             str(provider_state.get("version", "1.0.0")),
             persist=False,
         )
+        real_provider_state = self.harness.memory.get(
+            "runtime_plugins", "global:provider.real-data"
+        ) or {"version": self.real_provider.provider_version}
+        self.install_real_provider(
+            self.real_provider,
+            str(real_provider_state.get("version", self.real_provider.provider_version)),
+            persist=False,
+        )
+
+    @property
+    def supported_modes(self) -> frozenset[str]:
+        status = self.real_provider.data_status()
+        modes = {"mock"}
+        if status["hybrid_ready"]:
+            modes.add("hybrid")
+        if status["real_ready"]:
+            modes.add("real")
+        return frozenset(modes)
 
     def install_provider(
         self,
@@ -105,6 +129,60 @@ class ForesightRuntime:
                 )
         return handle.as_dict()
 
+    def install_real_provider(
+        self,
+        provider: RealDataProvider,
+        version: str,
+        scope_key: str = "global",
+        make_active: bool = True,
+        persist: bool = True,
+    ) -> dict[str, Any]:
+        manifest = PluginManifest(
+            plugin_id="provider.real-data",
+            version=version,
+            kind="provider",
+            description="Public market datasets plus grounded Qwen review extraction",
+            capabilities=("tool:hybrid_data", "tool:real_data"),
+            permissions=("local-dataset:read", "model-api:call"),
+        )
+
+        def install(context) -> None:
+            context.register_tool(
+                ToolDefinition(
+                    name="hybrid_data",
+                    handler=provider.collect_hybrid,
+                    allowed_agents=frozenset({"collector"}),
+                    timeout_seconds=120,
+                    description="Collect public evidence with explicitly marked fallbacks",
+                )
+            )
+            context.register_tool(
+                ToolDefinition(
+                    name="real_data",
+                    handler=provider.collect_real,
+                    allowed_agents=frozenset({"collector"}),
+                    timeout_seconds=120,
+                    description="Collect public evidence and require grounded Qwen extraction",
+                )
+            )
+
+        handle = self.harness.plugins.install(
+            manifest,
+            install,
+            scope_key=scope_key,
+            health_check=lambda _context: callable(provider.collect_real) and callable(provider.collect_hybrid),
+            make_active=make_active,
+        )
+        if make_active:
+            self.real_provider = provider
+            if persist:
+                self.harness.memory.put(
+                    "runtime_plugins",
+                    f"{scope_key}:{manifest.plugin_id}",
+                    {"version": version, "scope_key": scope_key, "manifest": manifest.as_dict()},
+                )
+        return handle.as_dict()
+
     def rollback_provider(self, scope_key: str = "global") -> dict[str, Any]:
         handle = self.harness.plugins.rollback("provider.mock-data", scope_key)
         self.harness.memory.put(
@@ -120,13 +198,24 @@ class ForesightRuntime:
 
     def _ensure_snapshot_plugins(self, snapshot) -> None:
         for plugin in snapshot.plugins:
-            if plugin.get("plugin_id") != "provider.mock-data":
-                continue
             version = str(plugin["version"])
             scope_key = str(plugin.get("scope_key", "global"))
-            if not self.harness.plugins.has_generation("provider.mock-data", version, scope_key):
+            plugin_id = plugin.get("plugin_id")
+            if plugin_id == "provider.mock-data" and not self.harness.plugins.has_generation(
+                plugin_id, version, scope_key
+            ):
                 self.install_provider(
                     MockDataProvider(),
+                    version,
+                    scope_key=scope_key,
+                    make_active=False,
+                    persist=False,
+                )
+            if plugin_id == "provider.real-data" and not self.harness.plugins.has_generation(
+                plugin_id, version, scope_key
+            ):
+                self.install_real_provider(
+                    self.real_provider,
                     version,
                     scope_key=scope_key,
                     make_active=False,
@@ -244,7 +333,7 @@ class ForesightRuntime:
     ) -> dict[str, Any]:
         async def operation() -> dict[str, Any]:
             if node == "collect":
-                await CollectorAgent(self.provider).execute(request, board, self.harness, trace_id)
+                await CollectorAgent().execute(request, board, self.harness, trace_id)
                 return await self._checkpoint(task_id, "collected", board, trace_id)
             if node == "analyze":
                 await run_parallel(
@@ -454,6 +543,7 @@ class ForesightRuntime:
             "runtime_version": self.harness.runtime_version,
             "workflow_version": self.workflow_version,
             "supported_modes": sorted(self.supported_modes),
+            "real_data": self.real_provider.data_status(),
             "plugins": self.harness.plugins.list(),
         }
 

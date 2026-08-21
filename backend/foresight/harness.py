@@ -547,7 +547,14 @@ class AgentHarness:
         self.runs = RunStore(root / "runs.db")
         self.tools = ScopedToolRegistry()
         self.plugins = PluginManager(self.tools)
-        self.allowed_tools = {"mock_data", "statistics", "memory_read", "memory_write"}
+        self.allowed_tools = {
+            "mock_data",
+            "hybrid_data",
+            "real_data",
+            "statistics",
+            "memory_read",
+            "memory_write",
+        }
         self._guard_cleanup = self.tools.add_guard(
             CapabilityGuard(
                 guard_id="core-allowed-tools",

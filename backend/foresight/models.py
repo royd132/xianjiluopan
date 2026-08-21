@@ -32,7 +32,17 @@ class ResearchRequest(BaseModel):
 class EvidenceItem(BaseModel):
     evidence_id: str = Field(default_factory=lambda: str(uuid4()))
     source_name: str
-    source_type: Literal["trend", "review", "customs", "freight", "price", "social"]
+    source_type: Literal[
+        "trend",
+        "review",
+        "customs",
+        "freight",
+        "shipping",
+        "fx",
+        "price",
+        "social",
+        "model_trace",
+    ]
     claim: str
     raw_value: str
     url: str | None = None
@@ -40,6 +50,10 @@ class EvidenceItem(BaseModel):
     collected_at: datetime
     confidence: float = Field(ge=0, le=1)
     verified: bool = True
+    evidence_kind: Literal["source", "derived", "mock"] = "source"
+    source_record_ids: list[str] = Field(default_factory=list)
+    derivation_method: str | None = None
+    model_id: str | None = None
 
 
 class PrivateDomainHook(BaseModel):
@@ -96,6 +110,9 @@ class PainPoint(BaseModel):
     languages: list[str]
     sample_original: str
     sample_translation: str
+    source: str = "unknown"
+    extracted_by: Literal["llm", "keyword", "mock"] = "mock"
+    verification: dict[str, Any] = Field(default_factory=dict)
 
 
 class SupplySignal(BaseModel):

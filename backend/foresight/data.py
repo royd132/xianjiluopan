@@ -304,6 +304,7 @@ class MockDataProvider:
                 collected_at=now,
                 confidence=0.89,
                 verified=False,
+                evidence_kind="mock",
             ),
             EvidenceItem(
                 source_name=f'{market["marketplace"]} · {review_count} 条{market["language_label"]}评论样本',
@@ -314,6 +315,7 @@ class MockDataProvider:
                 collected_at=now,
                 confidence=0.86,
                 verified=False,
+                evidence_kind="mock",
             ),
             EvidenceItem(
                 source_name=f'UN Comtrade · HS {category["hs_code"]}',
@@ -325,6 +327,7 @@ class MockDataProvider:
                 collected_at=now,
                 confidence=0.84,
                 verified=False,
+                evidence_kind="mock",
             ),
             EvidenceItem(
                 source_name=f'{market["marketplace"]} Top 10 Snapshot',
@@ -335,6 +338,7 @@ class MockDataProvider:
                 collected_at=now,
                 confidence=0.82,
                 verified=False,
+                evidence_kind="mock",
             ),
             EvidenceItem(
                 source_name=market["freight_label"],
@@ -345,6 +349,7 @@ class MockDataProvider:
                 collected_at=now,
                 confidence=0.81,
                 verified=False,
+                evidence_kind="mock",
             ),
         ]
 

@@ -59,10 +59,10 @@
 | 业务痛点 | 常见做法 | 先机罗盘 |
 |---|---|---|
 | 数据分散 | 在趋势、平台、评论、海关和物流网站间切换 | Collector Agent 统一采集并形成事实层 |
-| 非英语评论难利用 | 先翻译再做简单情感分析 | Review Agent 保留原语让步结构；当前 Mock 复现结构化结果，真实语义模型通过 Adapter 接入 |
+| 非英语评论难利用 | 先翻译再做简单情感分析 | Review Agent 保留原语；BR 真实模式接入 Olist 葡语评论，Qwen 抽取结果必须回指源记录 |
 | 指标不能直接行动 | 人工拼装选品、定价和营销判断 | Decision Compiler 生成四类行动卡 |
 | AI 建议像黑盒 | 只看到结论，无法核查来源 | 每张卡绑定证据、时间和置信度 |
-| 报告很快过期 | 依靠人重新查询 | 当前登记反向条件；真实 Provider 接入后按快照变化触发重算 |
+| 报告很快过期 | 依靠人重新查询 | 当前登记反向条件；定时增量任务完成后按快照变化触发重算 |
 | Agent 难治理 | 失败后从头跑，过程不可见 | Harness 提供 Trace、Memory 与 Checkpoint |
 
 ## ✨ 项目状态
@@ -83,12 +83,12 @@
 - CLI 离线报告生成；
 - Python 自动化测试。
 
-默认使用**场景化确定性 Mock**：品类画像与市场画像共同决定评论痛点、价格带、竞品空位、种子渠道和供应链信号。目前内置 BR、US、MY、MX 四个市场，以及宠物喂食器、便携榨汁机、降噪耳机、咖啡磨豆机和通用品类画像，不需要 API Key 也能验证跨场景链路。真实模型与真实数据源通过 Provider/Agent 适配器逐步接入。
+默认仍可使用**场景化确定性 Mock**验证多品类、多市场链路；本地数据缓存和 Qwen 配置齐全时，Runtime 同时开放 `hybrid` 与 `real`。BR × 自动宠物喂食器已跑通 Amazon 商品/评论、Olist 葡语评论与成交、Comtrade、ECB 汇率、NY Fed GSCPI、World Bank LSCI 和 Qwen 的完整真实链路。
 
 | 能力状态 | 已实现 | 下一阶段 |
 |---|---|---|
 | 决策工作流 | 六 Agent、四卡、证据链、反向条件、人工复核 | 商家共创优化卡片字段与行业模板 |
-| 冷启动数据 | 多品类 × 多市场一致性 Mock | 授权趋势、评论、价格、贸易和物流 Provider |
+| 冷启动数据 | Mock / Hybrid / Real 三模式；BR 主场景真实闭环 | 当前 listing 授权源、MY 原语数据和定时增量 |
 | 实时能力 | SSE 推送任务执行事件 | 定时市场快照、变化检测、阈值告警 |
 | 自进化 | 反馈案例、策略候选、Validation/Holdout、人工激活与回滚 | 合规样本充足后评估 Prompt/Skill 或模型优化 |
 
@@ -140,7 +140,7 @@ flowchart TB
 | Agent | 责任 | 主要产物 |
 |---|---|---|
 | Collector Agent | 采集趋势、评论、价格、贸易和运价数据 | 原始市场数据、证据对象 |
-| Multilingual Review Agent | 保留原语评论并抽取让步结构；Mock 模式复现预置分析结果 | 痛点簇、原文引用 |
+| Multilingual Review Agent | 保留原语评论；Qwen 只返回源 review ID，代码取回原文 | 痛点簇、原文引用与 Prompt 指纹 |
 | Market Analysis Agent | 计算价格分位、竞争密度和机会指标 | 结构化市场指标 |
 | Supply Chain Agent | 计算贸易、运价和汇率领先信号 | 供应链风险与阈值状态 |
 | Decision Compiler Agent | 将带模式标识的证据编译为四类行动卡 | 决策卡草稿 |
@@ -220,6 +220,18 @@ npm.cmd run dev -- --port 4173
 ```
 
 前端会自动检测后端：连接成功时消费真实 SSE 事件；后端未启动时自动降级为本地演示模式。
+
+### 真实数据 + Qwen 报告
+
+先下载本地数据缓存，并在 `.env` 配置 `QWEN_API_KEY`：
+
+```powershell
+pip install -e ".[data]"
+.\scripts\data\download_all.ps1
+.\scripts\run_real_report.ps1 -Category "pet feeder" -Market BR
+```
+
+`real` 模式不允许模型失败后静默回退；`hybrid` 才允许规则抽取或明确标注的冷启动补位。原始数据因许可与体积原因不提交到 Git，下载脚本和来源清单可复现。
 
 公开部署时建议保护所有运行时变更接口：
 
@@ -353,6 +365,7 @@ npm.cmd run build
 - [系统架构](docs/系统架构.md)
 - [Agent 与事件协议](docs/Agent与事件协议.md)
 - [Harness、热插拔与受控自进化 v3](docs/Harness与自进化_v3.md)
+- [真实数据、冷启动与证据边界](docs/真实数据与冷启动.md)
 - [开发与扩展指南](docs/开发指南.md)
 - [原始完整 PRD](docs/PRD_先机罗盘_v1.0.md)
 - [产品与商业价值](docs/产品与商业价值.md)
@@ -368,9 +381,9 @@ npm.cmd run build
 
 | 模式 | 状态 | 说明 |
 |---|---|---|
-| `mock` | 已实现 | 品类画像 × 市场画像的确定性冷启动，适合 Demo、测试和无网络运行 |
-| `hybrid` | Schema 已预留，运行时未开放 | Provider 未安装前请求返回 `501`，不会降级后冒充混合结果 |
-| `real` | Schema 已预留，运行时未开放 | 官方、公开或授权 Provider 未安装前请求返回 `501` |
+| `mock` | 已实现 | 品类画像 × 市场画像的确定性冷启动，证据统一标记 `mock` |
+| `hybrid` | 已实现 | 公开数据优先；模型失败可规则回退，回退范围写入结果 |
+| `real` | 已实现 | 要求数据缓存、Qwen 和源记录回指同时成立，否则拒绝任务 |
 
 Mock 数据不会冒充真实发现。页面、API 和导出结果均披露数据模式。
 
@@ -406,9 +419,9 @@ Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的�
 - [x] 场景化多品类 × 多市场 Mock 冷启动
 - [x] 外置合成 DecisionCard 共享门禁回放与数据指纹
 - [x] Docker 与 CI
-- [ ] Google Trends / UN Comtrade 真实 Provider
+- [x] ECB / UN Comtrade / GSCPI / LSCI / Amazon / Olist 真实 Provider
 - [ ] 定时市场快照、变化检测与阈值告警
-- [ ] 可替换 Model Adapter 与多模型 Fallback
+- [x] 可替换 Qwen Model Adapter、结构化输出与源记录 Grounding
 - [ ] Chroma/Qdrant 双塔检索
 - [ ] 生产任务队列和分布式事件总线
 - [ ] 基于合规反馈样本的 Layer 3 模型演进

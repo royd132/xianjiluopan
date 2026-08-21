@@ -11,3 +11,11 @@ __pycache__/
 *.egg-info/
 .env
 .tmp/
+.pip-tmp/
+xianjiluopan-main/
+xianjiluopan-src/
+.foresight_*/
+datasets/**/*.csv
+datasets/**/*.jsonl
+datasets/**/*.parquet
+datasets/**/*.zip

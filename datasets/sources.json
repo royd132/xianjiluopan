@@ -1,0 +1,47 @@
+{
+  "verified_on": "2026-08-21",
+  "sources": [
+    {
+      "id": "ecb_frankfurter",
+      "url": "https://frankfurter.dev/",
+      "purpose": "fx",
+      "redistribute_raw": false,
+      "download_script": "scripts/data/download_fx.py"
+    },
+    {
+      "id": "nyfed_gscpi",
+      "url": "https://www.newyorkfed.org/research/policy/gscpi",
+      "purpose": "supply_chain_pressure",
+      "redistribute_raw": false,
+      "download_script": "scripts/data/download_gscpi.py"
+    },
+    {
+      "id": "world_bank_lsci",
+      "url": "https://data.worldbank.org/indicator/IS.SHP.GCNW.XQ",
+      "purpose": "shipping_connectivity",
+      "redistribute_raw": false,
+      "download_script": "scripts/data/download_world_bank_shipping.py"
+    },
+    {
+      "id": "un_comtrade",
+      "url": "https://comtradeplus.un.org/",
+      "purpose": "trade",
+      "redistribute_raw": false,
+      "download_script": "scripts/data/download_comtrade.py"
+    },
+    {
+      "id": "amazon_reviews_2023",
+      "url": "https://amazon-reviews-2023.github.io/",
+      "purpose": "reviews_and_product_snapshot",
+      "redistribute_raw": false,
+      "download_script": "scripts/data/download_amazon_metadata_sample.py"
+    },
+    {
+      "id": "olist_public_data",
+      "url": "https://github.com/olist/work-at-olist-data",
+      "purpose": "br_transactions_and_portuguese_reviews",
+      "redistribute_raw": false,
+      "download_script": "scripts/data/download_olist.py"
+    }
+  ]
+}
