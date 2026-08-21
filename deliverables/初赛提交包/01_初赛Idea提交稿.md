@@ -206,7 +206,7 @@ BR × 自动宠物喂食器主场景已经跑通 Amazon 商品/评论、Olist �
 
 - 可运行代码仓库：https://github.com/royd132/xianjiluopan
 - 产品原型与真实任务截图；
-- 90 秒字幕演示视频；
+- 完整使用演示教程（PDF 与 Markdown）；
 - 系统技术架构图；
 - AI Agent 工作流图；
 - PDF 版方案说明书；

@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "deliverables" / "初赛提交包"
 SCREENSHOTS = PACKAGE / "screenshots"
 PDF_PATH = PACKAGE / "先机罗盘_初赛方案说明书.pdf"
-VIDEO_PATH = PACKAGE / "先机罗盘_90秒演示.mp4"
+TUTORIAL_PDF_PATH = PACKAGE / "先机罗盘_完整使用演示教程.pdf"
 ZIP_PATH = ROOT / "deliverables" / "先机罗盘_菜菜唠唠_初赛提交包.zip"
 FONT_REGULAR = Path(r"C:\Windows\Fonts\msyh.ttc")
 FONT_BOLD = Path(r"C:\Windows\Fonts\msyhbd.ttc")
@@ -342,89 +342,152 @@ def build_pdf(arch_path, flow_path):
     return PDF_PATH
 
 
-def cover_frame(title_text, subtitle_text, tag=None):
-    img = Image.new("RGB", (1280, 720), PALE)
-    draw = ImageDraw.Draw(img)
-    draw.rectangle((0, 0, 1280, 720), fill=NAVY)
-    draw.rectangle((0, 0, 16, 720), fill=BLUE)
-    if tag:
-        rounded(draw, (78, 76, 78 + 20 * len(tag) + 34, 118), "#20344D", None, 9)
-        draw.text((96, 85), tag, font=font(18, True), fill="#92B5FF")
-    lines = fit_lines(draw, title_text, font(48, True), 1040)
-    y = 198
-    for line in lines:
-        draw.text((78, y), line, font=font(48, True), fill=WHITE)
-        y += 70
-    for line in fit_lines(draw, subtitle_text, font(25), 1050):
-        draw.text((82, y + 24), line, font=font(25), fill="#C8D1DE")
-        y += 40
-    draw.text((82, 646), "菜菜唠唠  ·  场景三 AI 市场洞察", font=font(20), fill="#8FA2B8")
-    draw.text((1016, 646), "先机罗盘", font=font(23, True), fill=WHITE)
-    return img
-
-
-def image_frame(path, headline, caption, crop_top=0.0):
-    source = Image.open(path).convert("RGB")
-    canvas = Image.new("RGB", (1280, 720), PALE)
-    draw = ImageDraw.Draw(canvas)
-    draw.rectangle((0, 0, 1280, 86), fill=NAVY)
-    draw.text((42, 22), headline, font=font(30, True), fill=WHITE)
-    target = (42, 112, 1238, 608)
-    tw, th = target[2] - target[0], target[3] - target[1]
-    ratio = max(tw / source.width, th / source.height)
-    resized = source.resize((int(source.width * ratio), int(source.height * ratio)), Image.Resampling.LANCZOS)
-    left = max(0, (resized.width - tw) // 2)
-    available = max(0, resized.height - th)
-    top = int(available * crop_top)
-    view = resized.crop((left, top, left + tw, top + th))
-    canvas.paste(view, (target[0], target[1]))
-    draw.rectangle((target[0], target[1], target[2], target[3]), outline=LINE, width=2)
-    draw.rectangle((0, 628, 1280, 720), fill=WHITE)
-    draw.text((42, 650), caption, font=font(23, True), fill=INK)
-    return canvas
-
-
-def video_frames(scene, seconds, fps=15):
-    base = scene.convert("RGB")
-    total = int(seconds * fps)
-    for i in range(total):
-        # A restrained 1.5% push-in makes static evidence readable without pretending it is live interaction.
-        scale = 1 + 0.015 * (i / max(total - 1, 1))
-        frame = base.resize((int(1280 * scale), int(720 * scale)), Image.Resampling.BICUBIC)
-        x = (frame.width - 1280) // 2
-        y = (frame.height - 720) // 2
-        yield frame.crop((x, y, x + 1280, y + 720))
-
-
-def build_video(arch_path):
-    video_deps = ROOT / "tmp" / "video_deps"
-    sys.path.insert(0, str(video_deps))
-    import imageio_ffmpeg
-
-    scenes = [
-        (cover_frame("一个新品，值得进入这个海外市场吗？", "在样品、开模、备货和投放之前，把分散数据编译成可验证决策。", "业务问题"), 9),
-        (image_frame(SCREENSHOTS / "01_研究入口.png", "输入品类与国家，先检查真实数据能力", "真实数据不足会明确拒绝，不静默切换成演示数字。", 0.0), 11),
-        (image_frame(SCREENSHOTS / "02_决策摘要.png", "六类 Agent 编译四张行动卡", "直接回答：做什么、卖多少、怎么竞争、先找谁验证。", 0.0), 11),
-        (image_frame(SCREENSHOTS / "03_机会与风险.png", "从多语言评论识别“喜欢，但是……”", "模型返回源记录 ID，原文由代码取回，结论可以核查。", 0.25), 11),
-        (image_frame(SCREENSHOTS / "04_证据链.png", "证据不只要有来源，还要说明时间与市场范围", "汇率、贸易、评论和供应链信号分别执行新鲜度合同。", 0.62), 11),
-        (image_frame(SCREENSHOTS / "05_进化中心.png", "Harness 让多 Agent 可恢复、可审计、可演进", "失败反馈先经过 Validation / Holdout 回放，再由人激活。", 0.85), 11),
-        (image_frame(arch_path, "接口可插拔，变化只触发受影响的决策", "后续可接平台授权 API、Webhook、WebSocket 和消息队列。", 0.35), 10),
-        (cover_frame("把“我感觉能卖”变成可验证的进入决策", "哪些证据支持？先验证什么？什么情况下停止？", "先机罗盘"), 8),
-    ]
-    fps = 15
-    writer = imageio_ffmpeg.write_frames(
-        str(VIDEO_PATH), (1280, 720), fps=fps, codec="libx264", quality=7,
-        pix_fmt_in="rgb24", pix_fmt_out="yuv420p", macro_block_size=2,
-        ffmpeg_log_level="warning",
+def build_tutorial_pdf():
+    source_path = PACKAGE / "02_完整使用演示教程.md"
+    register_pdf_fonts()
+    doc = SimpleDocTemplate(
+        str(TUTORIAL_PDF_PATH), pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm,
+        topMargin=17 * mm, bottomMargin=21 * mm, title="先机罗盘完整使用演示教程",
+        author="菜菜唠唠",
     )
-    writer.send(None)
-    try:
-        for scene, seconds in scenes:
-            for frame in video_frames(scene, seconds, fps):
-                writer.send(frame.tobytes())
-    finally:
-        writer.close()
-    return VIDEO_PATH, sum(seconds for _, seconds in scenes)
+    styles = getSampleStyleSheet()
+    cover_title = ParagraphStyle("tutorial-cover", parent=styles["Title"], fontName="YaHeiBold", fontSize=25, leading=36, textColor=colors.HexColor(INK), alignment=TA_CENTER)
+    cover_subtitle = ParagraphStyle("tutorial-cover-sub", parent=styles["Normal"], fontName="YaHei", fontSize=11, leading=19, textColor=colors.HexColor(MUTED), alignment=TA_CENTER)
+    h1 = ParagraphStyle("tutorial-h1", parent=styles["Heading1"], fontName="YaHeiBold", fontSize=17, leading=24, textColor=colors.HexColor(INK), spaceBefore=9, spaceAfter=7, keepWithNext=True)
+    h2 = ParagraphStyle("tutorial-h2", parent=styles["Heading2"], fontName="YaHeiBold", fontSize=12.5, leading=18, textColor=colors.HexColor(BLUE), spaceBefore=7, spaceAfter=4, keepWithNext=True)
+    body = ParagraphStyle("tutorial-body", parent=styles["BodyText"], fontName="YaHei", fontSize=9, leading=14.5, textColor=colors.HexColor(INK), spaceAfter=4)
+    small = ParagraphStyle("tutorial-small", parent=body, fontSize=7.8, leading=12, textColor=colors.HexColor(MUTED))
+    bullet = ParagraphStyle("tutorial-bullet", parent=body, leftIndent=14, firstLineIndent=-9, bulletIndent=2, spaceAfter=2.5)
+    quote = ParagraphStyle("tutorial-quote", parent=body, fontName="YaHeiBold", fontSize=10.5, leading=17, textColor=colors.HexColor(BLUE), borderColor=colors.HexColor("#BFD2FF"), borderWidth=1, borderPadding=8, backColor=colors.HexColor("#EEF4FF"), spaceBefore=5, spaceAfter=7)
+    code = ParagraphStyle("tutorial-code", parent=body, fontName="YaHei", fontSize=8, leading=13, textColor=colors.HexColor("#E7EEF8"), backColor=colors.HexColor(NAVY), borderPadding=7, leftIndent=4, rightIndent=4, spaceBefore=3, spaceAfter=6)
+    th = ParagraphStyle("tutorial-th", parent=small, fontName="YaHeiBold", textColor=colors.white)
+
+    def P(value, style=body):
+        safe = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        safe = safe.replace("**", "")
+        safe = safe.replace("`", "")
+        return Paragraph(safe, style)
+
+    def make_table(rows):
+        columns = max(len(row) for row in rows)
+        prepared = []
+        for row_index, row in enumerate(rows):
+            padded = row + [""] * (columns - len(row))
+            prepared.append([P(cell, th if row_index == 0 else small) for cell in padded])
+        available = 174 * mm
+        widths = [available / columns] * columns
+        result = Table(prepared, colWidths=widths, repeatRows=1, hAlign="LEFT")
+        commands = [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(NAVY)),
+            ("GRID", (0, 0), (-1, -1), .4, colors.HexColor(LINE)),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]
+        for row_index in range(1, len(rows)):
+            commands.append(("BACKGROUND", (0, row_index), (-1, row_index), colors.HexColor("#F7F9FB" if row_index % 2 == 0 else WHITE)))
+        result.setStyle(TableStyle(commands))
+        return result
+
+    story = [Spacer(1, 35 * mm), P("先机罗盘", cover_title), P("完整使用演示教程", cover_title), Spacer(1, 8 * mm)]
+    story += [P("从启动环境到完成一项可核查的跨境市场进入决策", quote), Spacer(1, 12 * mm)]
+    story += [P("团队：菜菜唠唠", cover_subtitle), P("主案例：宠物自动喂食器 × 巴西", cover_subtitle), P("版本：v1.0 · 2026-08-21", cover_subtitle), Spacer(1, 38 * mm)]
+    story += [P("项目仓库 github.com/royd132/xianjiluopan", cover_subtitle), PageBreak()]
+
+    lines = source_path.read_text(encoding="utf-8").splitlines()
+    index = 0
+    paragraph_buffer = []
+
+    def flush_paragraph():
+        if paragraph_buffer:
+            story.append(P(" ".join(paragraph_buffer), body))
+            paragraph_buffer.clear()
+
+    while index < len(lines):
+        raw = lines[index].rstrip()
+        stripped = raw.strip()
+        if index == 0 and stripped.startswith("# "):
+            index += 1
+            continue
+        if not stripped:
+            flush_paragraph()
+            index += 1
+            continue
+        if stripped.startswith("```"):
+            flush_paragraph()
+            code_lines = []
+            index += 1
+            while index < len(lines) and not lines[index].strip().startswith("```"):
+                code_lines.append(lines[index])
+                index += 1
+            escaped_code = "<br/>".join(
+                line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") or " "
+                for line in code_lines
+            )
+            story.append(Paragraph(escaped_code, code))
+            index += 1
+            continue
+        if stripped.startswith("![") and "](" in stripped and stripped.endswith(")"):
+            flush_paragraph()
+            alt = stripped[2:stripped.index("](")]
+            relative = stripped[stripped.index("](") + 2:-1]
+            image_path = PACKAGE / relative
+            with Image.open(image_path) as preview:
+                ratio = preview.height / preview.width
+            width = 174 * mm
+            height = min(width * ratio, 96 * mm)
+            story.append(RLImage(str(image_path), width=width, height=height))
+            story.append(P(f"图：{alt}", small))
+            index += 1
+            continue
+        if stripped.startswith("|") and stripped.endswith("|"):
+            flush_paragraph()
+            table_lines = []
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                table_lines.append(lines[index].strip())
+                index += 1
+            rows = []
+            for table_line in table_lines:
+                cells = [cell.strip() for cell in table_line.strip("|").split("|")]
+                if cells and all(set(cell) <= {"-", ":"} for cell in cells):
+                    continue
+                rows.append(cells)
+            if rows:
+                story.append(make_table(rows))
+                story.append(Spacer(1, 3 * mm))
+            continue
+        if stripped.startswith("### "):
+            flush_paragraph()
+            story.append(P(stripped[4:], h2))
+            index += 1
+            continue
+        if stripped.startswith("## "):
+            flush_paragraph()
+            story.append(P(stripped[3:], h1))
+            index += 1
+            continue
+        if stripped.startswith(">"):
+            flush_paragraph()
+            quote_lines = []
+            while index < len(lines) and lines[index].strip().startswith(">"):
+                content = lines[index].strip()[1:].strip()
+                if content:
+                    quote_lines.append(content)
+                index += 1
+            story.append(P(" · ".join(quote_lines), quote))
+            continue
+        if stripped.startswith("- ") or (len(stripped) > 3 and stripped[0].isdigit() and ". " in stripped[:4]):
+            flush_paragraph()
+            content = stripped[2:] if stripped.startswith("- ") else stripped.split(". ", 1)[1]
+            marker = "• " if stripped.startswith("- ") else stripped.split(". ", 1)[0] + ". "
+            story.append(P(marker + content, bullet))
+            index += 1
+            continue
+        paragraph_buffer.append(stripped)
+        index += 1
+    flush_paragraph()
+    doc.build(story, onFirstPage=pdf_header_footer, onLaterPages=pdf_header_footer)
+    return TUTORIAL_PDF_PATH
 
 
 def build_manifest(files):
@@ -456,15 +519,15 @@ def main():
     arch = build_architecture()
     flow = build_workflow()
     pdf = build_pdf(arch, flow)
-    video, seconds = build_video(arch)
+    tutorial_pdf = build_tutorial_pdf()
     source_files = [
-        PACKAGE / "README_提交说明.md", PACKAGE / "01_初赛Idea提交稿.md", PACKAGE / "02_90秒演示讲解词.md",
-        arch, flow, pdf, video, *required,
+        PACKAGE / "README_提交说明.md", PACKAGE / "01_初赛Idea提交稿.md", PACKAGE / "02_完整使用演示教程.md",
+        arch, flow, pdf, tutorial_pdf, *required,
     ]
     manifest = build_manifest(source_files)
     package_zip = build_zip()
     print(f"PDF={pdf}")
-    print(f"VIDEO={video} ({seconds}s)")
+    print(f"TUTORIAL={tutorial_pdf}")
     print(f"MANIFEST={manifest}")
     print(f"ZIP={package_zip}")
 

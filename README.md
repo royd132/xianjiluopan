@@ -356,7 +356,7 @@ npm.cmd run build
 ├── src/                # React 洞察工作台
 ├── tests/              # 后端自动化测试
 ├── docs/               # 架构、协议、比赛与演示文档
-├── deliverables/       # 初赛 PDF、视频、图示、截图与提交 ZIP
+├── deliverables/       # 初赛 PDF、使用教程、图示、截图与提交 ZIP
 ├── scripts/            # 本地运行脚本
 ├── pyproject.toml
 └── package.json
@@ -364,7 +364,7 @@ npm.cmd run build
 
 ## 📚 文档导航
 
-- [初赛完整提交包](deliverables/初赛提交包/README_提交说明.md)（PDF、82 秒演示视频、架构图、流程图与真实任务截图）
+- [初赛完整提交包](deliverables/初赛提交包/README_提交说明.md)（方案 PDF、完整使用教程、架构图、流程图与真实任务截图）
 - [初赛提交 ZIP](deliverables/先机罗盘_菜菜唠唠_初赛提交包.zip)
 - [系统架构](docs/系统架构.md)
 - [Agent 与事件协议](docs/Agent与事件协议.md)
