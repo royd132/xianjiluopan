@@ -523,7 +523,7 @@ function App() {
       setCurrentTaskId(taskId);
       setSelectedPain(payload.result.pain_points[0]?.pain_type || 'noise');
       setRuntimeMessage(`6 个 Agent 已完成 · Trace ${payload.result.trace_id.slice(0, 8)}`);
-      window.history.replaceState({}, '', `${window.location.pathname}?task=${encodeURIComponent(taskId)}`);
+      window.history.replaceState({}, '', `${window.location.pathname}?task=${encodeURIComponent(taskId)}${window.location.hash}`);
       loadMonitoring(payload.result.request.category, payload.result.request.market);
     }
     setAgentStep(agents.length);
@@ -538,6 +538,14 @@ function App() {
     sharedTaskLoadedRef.current = true;
     loadRuntimeResult(taskId).catch(() => setToast('共享报告不存在或已过期'));
   }, [runtimeState]);
+
+  useEffect(() => {
+    if (!hasReport || !window.location.hash) return undefined;
+    const timer = window.setTimeout(() => {
+      document.querySelector(window.location.hash)?.scrollIntoView({ block: 'start' });
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [hasReport]);
 
   const connectRuntimeEvents = (taskId) => {
     eventSourceRef.current?.close();
@@ -770,7 +778,7 @@ function App() {
         </header>
 
         <div className="page-wrap">
-          <section className="query-workbench">
+          <section className="query-workbench" id="research-entry">
             <div className="section-heading-row">
               <div>
                 <span className="eyebrow">全球市场机会扫描</span>
@@ -828,7 +836,7 @@ function App() {
             </section>
           ) : (
             <>
-          <section className="report-header" ref={resultsRef}>
+          <section className="report-header" id="report-summary" ref={resultsRef}>
             <div className="report-product">
               {/(宠物|喂食|pet|feeder)/i.test(reportCategory)
                 ? <img src={productImage} alt="宠物自动喂食器演示概念" />
@@ -864,7 +872,7 @@ function App() {
             </section>
           ) : (
             <>
-              <div className="content-title"><div><span className="eyebrow">决策处方</span><h2>四张卡，回答怎么做</h2></div><span className="validity"><Clock3 size={15} />结论有效期剩余 14 天</span></div>
+              <div className="content-title" id="decision-cards"><div><span className="eyebrow">决策处方</span><h2>四张卡，回答怎么做</h2></div><span className="validity"><Clock3 size={15} />结论有效期剩余 14 天</span></div>
               <section className="card-grid">
                 {decisionCards.map((card) => {
                   const Icon = card.icon;
@@ -880,8 +888,8 @@ function App() {
             </>
           )}
 
-          <section className="insight-grid">
-            <article className="panel radar-panel" id="pain-radar">
+          <section className="insight-grid" id="pain-radar">
+            <article className="panel radar-panel">
               <div className="panel-head"><div><span className="eyebrow">原语洞察</span><h2>“我喜欢，但是…” 痛点雷达</h2></div><span className="mock-pill">{reportMode === 'real' ? '源记录回指' : reportMode === 'hybrid' ? '公开数据优先' : 'Mock 原语样本'}</span></div>
               <div className="radar-body">
                 <div className="bubble-chart" aria-label="痛点机会气泡图">
@@ -907,7 +915,7 @@ function App() {
             </article>
           </section>
 
-          <section className="evidence-panel">
+          <section className="evidence-panel" id="evidence-chain">
             <div className="panel-head"><div><span className="eyebrow">可追溯依据</span><h2>这项决策，凭什么？</h2></div><span className="verified-pill"><ShieldCheck size={15} />{reportEvidence.length} 条结构校验通过</span></div>
             <div className="evidence-table">
               {reportEvidence.map((item, index) => <button key={`${item.source}-${index}`} onClick={() => setSelectedEvidence(item)}><span className="evidence-index">{String(index + 1).padStart(2, '0')}</span><span className="evidence-source"><small>{item.type} · {scopeLabels[item.marketScope]} · {freshnessLabels[item.freshnessClass]}</small><strong>{item.source}</strong></span><span className="evidence-claim">{item.claim}</span><strong className="evidence-value">{item.value}</strong><span className="evidence-open"><ArrowRight size={15} /></span></button>)}
