@@ -1,6 +1,19 @@
+import pytest
 from fastapi.testclient import TestClient
 
+import foresight.api as api_module
 from foresight.api import app
+from foresight.runtime import ForesightRuntime
+
+
+@pytest.fixture(autouse=True)
+def isolated_runtime(tmp_path, monkeypatch):
+    runtime = ForesightRuntime(
+        tmp_path / ".foresight",
+        datasets_dir=tmp_path / "empty-datasets",
+    )
+    monkeypatch.setattr(api_module, "runtime", runtime)
+    return runtime
 
 
 def test_health_endpoint():
@@ -11,7 +24,18 @@ def test_health_endpoint():
     assert isinstance(response.json()["scenario_capabilities"], list)
 
 
-def test_monitoring_endpoint_returns_an_explicit_schedule_status():
+def test_monitoring_endpoint_returns_an_explicit_schedule_status(monkeypatch, isolated_runtime):
+    monkeypatch.setattr(
+        isolated_runtime,
+        "monitoring_snapshot",
+        lambda category, market: {
+            "category": category,
+            "market": market,
+            "schedule_status": "manual_snapshot",
+            "signals": [],
+            "trigger_count": 0,
+        },
+    )
     response = TestClient(app).get(
         "/api/v1/monitoring",
         params={"category": "pet feeder", "market": "BR"},
@@ -20,6 +44,16 @@ def test_monitoring_endpoint_returns_an_explicit_schedule_status():
     assert response.status_code == 200
     assert response.json()["schedule_status"] == "manual_snapshot"
     assert "signals" in response.json()
+
+
+def test_monitoring_endpoint_discloses_missing_public_cache():
+    response = TestClient(app).get(
+        "/api/v1/monitoring",
+        params={"category": "pet feeder", "market": "BR"},
+    )
+
+    assert response.status_code == 409
+    assert "public-data cache" in response.json()["detail"]
 
 
 def test_runtime_extensions_endpoint():
@@ -39,7 +73,7 @@ def test_research_endpoint_rejects_unavailable_real_mode():
     )
 
     assert response.status_code == 501
-    assert "unavailable" in response.json()["detail"]
+    assert "not available" in response.json()["detail"]
 
 
 def test_admin_token_protects_runtime_mutations(monkeypatch):
