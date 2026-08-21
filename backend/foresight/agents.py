@@ -129,8 +129,8 @@ class DecisionCompilerAgent(BaseAgent):
                 card_type=CardType.PRODUCT_SELECTION,
                 action_title=f'优先验证“{scenario["differentiator"]}”的{request.category}，进入{scenario["market_name"]}市场',
                 action_detail=f'把“{lead_pain.label}”作为第一问题，用{scenario["secondary_differentiator"]}构成第二道差异；先验证需求，再开模或备货。',
-                confidence=ConfidenceLevel.HIGH,
-                confidence_score=round(0.72 + metrics["blue_ocean_index"] * 0.18, 2),
+                confidence=ConfidenceLevel.MEDIUM if not competitor_gap_available else ConfidenceLevel.HIGH,
+                confidence_score=round(0.58 + metrics["blue_ocean_index"] * 0.18, 2),
                 private_domain_hook=hook,
                 failure_conditions=[
                     FailureCondition(
@@ -140,7 +140,7 @@ class DecisionCompilerAgent(BaseAgent):
                         action_on_trigger="recalculate",
                     )
                 ],
-                card_specific_data={"opportunity_score": metrics["blue_ocean_index"], "opportunity_score_basis": scenario.get("opportunity_score_basis", "cold-start-profile"), "target_market": request.market.upper(), "differentiation_point": scenario["differentiator"], "primary_pain": lead_pain.label, "mock_scope": scenario["mock_scope"]},
+                card_specific_data={"opportunity_score": metrics["blue_ocean_index"], "opportunity_score_basis": scenario.get("opportunity_score_basis", "cold-start-profile"), "opportunity_score_calibration": scenario.get("opportunity_score_calibration", "not_calibrated"), "target_market": request.market.upper(), "differentiation_point": scenario["differentiator"], "primary_pain": lead_pain.label, "mock_scope": scenario["mock_scope"]},
                 **common,
             ),
             DecisionCard(
@@ -155,22 +155,22 @@ class DecisionCompilerAgent(BaseAgent):
                     else f"以 {price_symbol}{anchor:.2f} 为价值锚，首发测试 {price_symbol}{launch_low}–{launch_high}"
                 ),
                 action_detail=(
-                    f'当前缺少合规竞品报价源，区间是待验证假设；用“{scenario["proof_metric"]}”支撑溢价，'
-                    f'首轮目标毛利 {scenario["gross_margin_pct"]}%，接入真实报价或物流成本越线后立即重算。'
+                    f'当前缺少合规竞品报价源，区间是待验证假设；用“{scenario["proof_metric"]}”支撑溢价。'
+                    f'{scenario["gross_margin_pct"]}% 仅是经营目标，补齐采购、头程、关税、平台佣金和投放成本后才能计算真实毛利。'
                     if modeled_price
                     else f'区间来自商品级公开价格快照，不冒充今日实时价；用“{scenario["proof_metric"]}”验证可接受溢价，'
-                    f'首轮目标毛利 {scenario["gross_margin_pct"]}%，接入当前报价后重算。'
+                    f'{scenario["gross_margin_pct"]}% 仅是经营目标；补齐采购、头程、关税、平台佣金和投放成本后重算。'
                     if snapshot_price
                     else f'区间来自公开历史成交而非今日竞品报价；用“{scenario["proof_metric"]}”验证可接受溢价，'
-                    f'首轮目标毛利 {scenario["gross_margin_pct"]}%，接入当前报价后重算。'
+                    f'{scenario["gross_margin_pct"]}% 仅是经营目标；补齐采购、头程、关税、平台佣金和投放成本后重算。'
                     if historical_price
-                    else f'用“{scenario["proof_metric"]}”支撑价格，不用功能数量支撑价格；首轮目标毛利 {scenario["gross_margin_pct"]}%，物流成本越线时重新计算。'
+                    else f'用“{scenario["proof_metric"]}”支撑价格，不用功能数量支撑价格；{scenario["gross_margin_pct"]}% 仅是经营目标，完整成本录入后再计算。'
                 ),
                 confidence=ConfidenceLevel.MEDIUM if modeled_price or historical_price or snapshot_price else ConfidenceLevel.HIGH,
                 confidence_score=0.68 if modeled_price else 0.76 if snapshot_price else 0.72 if historical_price else 0.82,
                 private_domain_hook=hook,
                 failure_conditions=[FailureCondition(condition="物流成本侵蚀目标毛利", metric_to_watch=scenario["freight_metric"], threshold=">15%", action_on_trigger="recalculate")],
-                card_specific_data={"anchor_price": anchor, "price_range": [launch_low, launch_high], "gross_margin_pct": scenario["gross_margin_pct"], "pricing_basis": scenario["proof_metric"], "price_data_mode": scenario.get("price_data_mode", "observed")},
+                card_specific_data={"anchor_price": anchor, "price_range": [launch_low, launch_high], "gross_margin_pct": scenario["gross_margin_pct"], "gross_margin_status": scenario.get("gross_margin_status", "planning_hypothesis"), "pricing_basis": scenario["proof_metric"], "price_data_mode": scenario.get("price_data_mode", "observed")},
                 **common,
             ),
             DecisionCard(
@@ -194,13 +194,13 @@ class DecisionCompilerAgent(BaseAgent):
             ),
             DecisionCard(
                 card_type=CardType.PRIVATE_DOMAIN,
-                action_title=f'先在{scenario["community"]}找到 30 个种子用户',
+                action_title=f'先在{scenario["community"]}招募 30 个种子用户完成意向验证',
                 action_detail=f'针对“{scenario["seed_audience"]}”投放问题对比素材，用“{scenario["hook_message"]}”测试购买意向；达到阈值后再决定首批备货。',
-                confidence=ConfidenceLevel.HIGH,
-                confidence_score=0.90,
+                confidence=ConfidenceLevel.MEDIUM,
+                confidence_score=0.62,
                 private_domain_hook=hook,
                 failure_conditions=[FailureCondition(condition="种子测试未形成有效兴趣", metric_to_watch="落地页购买意向率", threshold="<5%", action_on_trigger="abort")],
-                card_specific_data={"gathering_places": [scenario["community"], scenario["marketplace"]], "repurchase_signal_strength": scenario["repurchase_signal"], "validation_sample": 30},
+                card_specific_data={"gathering_places": [scenario["community"], scenario["marketplace"]], "repurchase_signal_strength": scenario["repurchase_signal"], "repurchase_signal_status": "not_measured", "validation_sample": 30},
                 **common,
             ),
         ]
@@ -224,6 +224,10 @@ class SafetyEvaluationAgent(BaseAgent):
             policy["minimum_source_evidence"] = max(
                 int(policy.get("minimum_source_evidence", 0)),
                 3,
+            )
+            policy["minimum_recent_evidence"] = max(
+                int(policy.get("minimum_recent_evidence", 0)),
+                1,
             )
             # Native-language source reviews are a disclosed coverage gap in the
             # public-data demo. Translated findings never masquerade as source data.

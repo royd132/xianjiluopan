@@ -14,6 +14,7 @@ import {
   Clipboard,
   Clock3,
   Compass,
+  Database,
   Download,
   ExternalLink,
   FileText,
@@ -25,6 +26,7 @@ import {
   PackageSearch,
   PanelTop,
   RefreshCw,
+  RadioTower,
   Search,
   Settings,
   ShieldCheck,
@@ -32,6 +34,7 @@ import {
   Target,
   TrendingUp,
   Users,
+  Printer,
   X,
   XCircle,
   Zap,
@@ -46,6 +49,48 @@ const markets = [
   { code: 'MY', name: '马来西亚', flag: 'MY' },
   { code: 'MX', name: '墨西哥', flag: 'MX' },
 ];
+
+const categoryPatterns = [
+  { key: 'pet_feeder', pattern: /(宠物|喂食|pet|feeder)/i },
+  { key: 'portable_blender', pattern: /(榨汁|果汁|blender|juicer)/i },
+  { key: 'noise_cancelling_headphones', pattern: /(耳机|降噪|headphone|earbud|anc)/i },
+  { key: 'coffee_grinder', pattern: /(咖啡|磨豆|coffee|grinder)/i },
+];
+
+const scopeLabels = {
+  target_market: '目标市场',
+  cross_market: '跨市场产品证据',
+  category_proxy: '目标市场类目代理',
+  macro: '全球宏观',
+  unknown: '适用范围待确认',
+};
+
+const freshnessLabels = {
+  live: '近期',
+  recent: '近期',
+  historical: '历史基线',
+  structural: '结构性基线',
+  unknown: '时间待确认',
+};
+
+const capabilitySignalLabels = {
+  'runtime:fx': '汇率缓存',
+  'runtime:reviews': '评论语料',
+  'runtime:trade': '贸易数据',
+  'runtime:gscpi': '供应链指数',
+  'runtime:qwen': 'Qwen 模型配置',
+  source_backed_price: '有来源的竞品价格',
+  native_market_reviews: '目标市场原生评论',
+  current_competitor_listings: '当前竞品 listing',
+};
+
+function capabilitySignals(items = []) {
+  return items.map((item) => capabilitySignalLabels[item] || item).join('、');
+}
+
+function categoryKeyForQuery(value) {
+  return categoryPatterns.find((item) => item.pattern.test(value))?.key || 'generic';
+}
 
 const agents = [
   { label: '市场采集', detail: '趋势 / 评论 / 价格 / 贸易信号', icon: Globe2 },
@@ -136,9 +181,9 @@ const demoCards = [
 
 const cardPresentation = {
   product_selection: { id: 'product', type: '选品方向', icon: PackageSearch, tone: 'blue', metric: '机会分' },
-  pricing: { id: 'pricing', type: '定价策略', icon: CircleDollarSign, tone: 'amber', metric: '建议毛利' },
+  pricing: { id: 'pricing', type: '定价策略', icon: CircleDollarSign, tone: 'amber', metric: '毛利目标' },
   competitive: { id: 'competitive', type: '竞争打法', icon: Target, tone: 'violet', metric: '表达空位' },
-  private_domain: { id: 'private', type: '私域人群', icon: Users, tone: 'green', metric: '复购信号' },
+  private_domain: { id: 'private', type: '私域人群', icon: Users, tone: 'green', metric: '复购验证' },
 };
 
 function mapRuntimeCards(runtimeCards) {
@@ -147,9 +192,9 @@ function mapRuntimeCards(runtimeCards) {
     const data = card.card_specific_data || {};
     let metricValue = '—';
     if (card.card_type === 'product_selection') metricValue = String(Math.round((data.opportunity_score ?? data.blue_ocean_index ?? 0) * 100));
-    if (card.card_type === 'pricing') metricValue = `${data.gross_margin_pct || 31}%`;
+    if (card.card_type === 'pricing') metricValue = data.gross_margin_status === 'planning_hypothesis' ? `目标 ${data.gross_margin_pct || 31}%` : `${data.gross_margin_pct || 31}%`;
     if (card.card_type === 'competitive') metricValue = data.listing_audit_required ? '待审计' : `${data.expression_gap_pct ?? 0}%`;
-    if (card.card_type === 'private_domain') metricValue = data.repurchase_signal_strength === 'strong' ? '强' : '中';
+    if (card.card_type === 'private_domain') metricValue = data.repurchase_signal_status === 'not_measured' || data.repurchase_signal_strength === 'unverified' ? '待验证' : data.repurchase_signal_strength === 'strong' ? '强' : '中';
     return {
       ...presentation,
       confidence: Math.round(card.confidence_score * 100),
@@ -191,6 +236,14 @@ function mapRuntimeEvidence(runtimeCards) {
     value: item.raw_value,
     verified: item.verified,
     url: item.url,
+    observedAt: item.observed_at,
+    collectedAt: item.collected_at,
+    observationPeriod: item.observation_period,
+    freshnessClass: item.freshness_class || 'unknown',
+    marketScope: item.market_scope || 'unknown',
+    sourceMarket: item.source_market,
+    evidenceKind: item.evidence_kind,
+    modelId: item.model_id,
   }));
 }
 
@@ -208,7 +261,7 @@ function mapRuntimeReviews(items, marketName) {
   return Object.fromEntries(items.map((item) => [item.pain_type, {
     original: item.sample_original,
     translation: item.sample_translation,
-    meta: `${item.languages.join(' / ')} · ${marketName} · ${item.extracted_by === 'llm' ? 'Qwen 源记录回指' : item.extracted_by === 'keyword' ? '规则源记录抽取' : 'Mock 样本'}`,
+    meta: `${item.languages.join(' / ')} · ${item.market_scope === 'target_market' ? item.source_market || marketName : item.market_scope === 'category_proxy' ? `${item.source_market || marketName} 类目代理` : `跨市场 · ${item.source_market || 'global'}`} · ${item.extracted_by === 'llm' ? 'Qwen 源记录回指' : item.extracted_by === 'keyword' ? '规则源记录抽取' : 'Mock 样本'}`,
   }]));
 }
 
@@ -293,9 +346,11 @@ function App() {
   const [mode, setMode] = useState('evidence');
   const [researchMode, setResearchMode] = useState('mock');
   const [supportedModes, setSupportedModes] = useState(['mock']);
+  const [scenarioCapabilities, setScenarioCapabilities] = useState([]);
   const [running, setRunning] = useState(false);
   const [agentStep, setAgentStep] = useState(4);
   const [selectedCard, setSelectedCard] = useState(null);
+  const [selectedEvidence, setSelectedEvidence] = useState(null);
   const [selectedPain, setSelectedPain] = useState('noise');
   const [reviewStatus, setReviewStatus] = useState('pending');
   const [toast, setToast] = useState('');
@@ -310,16 +365,26 @@ function App() {
   const [reportCategory, setReportCategory] = useState('宠物自动喂食器');
   const [reportMarket, setReportMarket] = useState('BR');
   const [reportGeneratedAt, setReportGeneratedAt] = useState(new Date().toISOString());
-  const [reportMode, setReportMode] = useState('mock-offline');
+  const [reportMode, setReportMode] = useState(null);
+  const [hasReport, setHasReport] = useState(false);
+  const [currentTaskId, setCurrentTaskId] = useState(null);
+  const [monitoring, setMonitoring] = useState(null);
+  const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [runtimeState, setRuntimeState] = useState('checking');
   const [runtimeMessage, setRuntimeMessage] = useState('正在检测多 Agent Runtime');
   const [evolution, setEvolution] = useState(null);
   const [evolutionLoading, setEvolutionLoading] = useState(false);
   const resultsRef = useRef(null);
   const eventSourceRef = useRef(null);
+  const sharedTaskLoadedRef = useRef(false);
 
   const selectedMarket = useMemo(() => markets.find((item) => item.code === market), [market]);
   const selectedReportMarket = useMemo(() => markets.find((item) => item.code === reportMarket), [reportMarket]);
+  const selectedCategoryKey = useMemo(() => categoryKeyForQuery(query), [query]);
+  const currentCapability = useMemo(
+    () => scenarioCapabilities.find((item) => item.market === market && item.category_key === selectedCategoryKey),
+    [scenarioCapabilities, market, selectedCategoryKey],
+  );
   const selectedReview = insightReviews[selectedPain] || Object.values(insightReviews)[0];
   const pricingFailure = decisionCards.find((card) => card.id === 'pricing')?.failureConditions?.[0];
   const productDecision = decisionCards.find((card) => card.id === 'product') || demoCards[0];
@@ -327,6 +392,20 @@ function App() {
   const opportunityScore = Math.round(Number(decisionCards.find((card) => card.id === 'product')?.metricValue || 86));
   const leadPain = insightPainPoints[0] || demoPainPoints[0];
   const demandSignal = insightSupplySignals[0] || demoSupplySignals[0];
+  const failureConditionCount = hasReport ? decisionCards.reduce((count, card) => count + (card.failureConditions?.length || 0), 0) : 0;
+
+  const modeAvailable = (item) => {
+    if (!supportedModes.includes(item)) return false;
+    if (item === 'real') return Boolean(currentCapability?.real_available);
+    if (item === 'hybrid') return currentCapability ? currentCapability.hybrid_available : true;
+    return true;
+  };
+
+  const capabilityText = currentCapability
+    ? currentCapability.real_available
+      ? `真实模式可用 · 价格依据：${currentCapability.price_source} · 已知缺口：${capabilitySignals(currentCapability.known_gaps) || '无'}`
+      : `真实模式暂不可用：${capabilitySignals(currentCapability.blocking_reasons || currentCapability.missing_signals)} · 建议使用公开数据 + 明示回退`
+    : '正在识别当前品类的数据覆盖范围';
 
   const loadEvolution = async () => {
     try {
@@ -369,8 +448,11 @@ function App() {
       })
       .then((payload) => {
         const modes = payload.supported_modes || ['mock'];
+        const capabilities = payload.scenario_capabilities || [];
         setSupportedModes(modes);
-        setResearchMode(modes.includes('real') ? 'real' : modes.includes('hybrid') ? 'hybrid' : 'mock');
+        setScenarioCapabilities(capabilities);
+        const initialCapability = capabilities.find((item) => item.market === 'BR' && item.category_key === 'pet_feeder');
+        setResearchMode(modes.includes('real') && initialCapability?.real_available ? 'real' : modes.includes('hybrid') ? 'hybrid' : 'mock');
         setRuntimeState('connected');
         setRuntimeMessage('多 Agent Runtime 已连接');
         loadEvolution();
@@ -381,6 +463,13 @@ function App() {
       });
     return () => eventSourceRef.current?.close();
   }, []);
+
+  useEffect(() => {
+    if (!currentCapability) return;
+    if (researchMode === 'real' && !currentCapability.real_available) {
+      setResearchMode(currentCapability.hybrid_available ? 'hybrid' : 'mock');
+    }
+  }, [currentCapability, researchMode]);
 
   const runLocalFallback = () => {
     setRuntimeState('offline');
@@ -394,9 +483,27 @@ function App() {
     setReportMarket('BR');
     setReportGeneratedAt(new Date().toISOString());
     setReportMode('mock-offline');
+    setHasReport(true);
+    setCurrentTaskId(null);
     setSelectedPain('noise');
     if (query !== '宠物自动喂食器' || market !== 'BR') setToast('离线固定样例已载入；启动后端可运行多品类、多市场冷启动');
     setRunning(true);
+  };
+
+  const loadMonitoring = async (category = reportCategory, targetMarket = reportMarket) => {
+    if (runtimeState !== 'connected') return;
+    setMonitoringLoading(true);
+    try {
+      const params = new URLSearchParams({ category, market: targetMarket });
+      const response = await fetch(`${API_BASE_URL}/api/v1/monitoring?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'monitoring unavailable');
+      setMonitoring(payload);
+    } catch {
+      setToast('监控快照暂不可用');
+    } finally {
+      setMonitoringLoading(false);
+    }
   };
 
   const loadRuntimeResult = async (taskId) => {
@@ -412,13 +519,25 @@ function App() {
       setReportMarket(payload.result.request.market);
       setReportGeneratedAt(payload.result.completed_at);
       setReportMode(payload.result.mode);
+      setHasReport(true);
+      setCurrentTaskId(taskId);
       setSelectedPain(payload.result.pain_points[0]?.pain_type || 'noise');
       setRuntimeMessage(`6 个 Agent 已完成 · Trace ${payload.result.trace_id.slice(0, 8)}`);
+      window.history.replaceState({}, '', `${window.location.pathname}?task=${encodeURIComponent(taskId)}`);
+      loadMonitoring(payload.result.request.category, payload.result.request.market);
     }
     setAgentStep(agents.length);
     setRunning(false);
     window.setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
   };
+
+  useEffect(() => {
+    if (runtimeState !== 'connected' || sharedTaskLoadedRef.current) return;
+    const taskId = new URLSearchParams(window.location.search).get('task');
+    if (!taskId) return;
+    sharedTaskLoadedRef.current = true;
+    loadRuntimeResult(taskId).catch(() => setToast('共享报告不存在或已过期'));
+  }, [runtimeState]);
 
   const connectRuntimeEvents = (taskId) => {
     eventSourceRef.current?.close();
@@ -459,6 +578,10 @@ function App() {
   const startAnalysis = async () => {
     if (!query.trim()) {
       setToast('请先输入一个品类关键词');
+      return;
+    }
+    if (!modeAvailable(researchMode)) {
+      setToast('当前市场与品类不满足真实模式数据合同，请切换为公开数据模式');
       return;
     }
     setReviewStatus('pending');
@@ -513,6 +636,13 @@ function App() {
     link.click();
     URL.revokeObjectURL(link.href);
     setToast('洞察报告已导出');
+  };
+
+  const shareReport = () => {
+    const url = currentTaskId
+      ? `${window.location.origin}${window.location.pathname}?task=${encodeURIComponent(currentTaskId)}`
+      : window.location.href;
+    copyText(url, '可恢复报告链接已复制');
   };
 
   const setReview = async (status) => {
@@ -612,7 +742,7 @@ function App() {
         <nav className="nav-list" aria-label="主导航">
           <button className={activeNav === 'workspace' ? 'active' : ''} onClick={() => handleNav('workspace')}><LayoutDashboard size={18} />洞察工作台</button>
           <button className={activeNav === 'radar' ? 'active' : ''} onClick={() => handleNav('radar')}><Target size={18} />痛点雷达</button>
-          <button className={activeNav === 'alerts' ? 'active' : ''} onClick={() => handleNav('alerts')}><Bell size={18} />失效条件<span className="nav-badge">2</span></button>
+          <button className={activeNav === 'alerts' ? 'active' : ''} onClick={() => handleNav('alerts')}><Bell size={18} />失效条件{failureConditionCount > 0 && <span className="nav-badge">{failureConditionCount}</span>}</button>
           <button className={activeNav === 'history' ? 'active' : ''} onClick={() => handleNav('history')}><History size={18} />历史洞察</button>
           <button className={activeNav === 'evolution' ? 'active' : ''} onClick={() => handleNav('evolution')}><Activity size={18} />演进中心{openFailures.length > 0 && <span className="nav-badge">{openFailures.length}</span>}</button>
         </nav>
@@ -644,7 +774,7 @@ function App() {
             <div className="section-heading-row">
               <div>
                 <span className="eyebrow">全球市场机会扫描</span>
-                <h1>今天，应该卖什么？</h1>
+                <h1>这个品类，值得进入这个市场吗？</h1>
                 <p>把分散的趋势、评论、竞品与供应链信号，编译成备货前可以验证的行动指令。</p>
               </div>
               <div className="mode-switch" aria-label="洞察模式">
@@ -667,8 +797,9 @@ function App() {
             <div className="query-options">
               <div className="quick-tags"><span>快速开始</span>{['宠物喂食器', '便携榨汁机', '降噪耳机'].map((tag) => <button key={tag} onClick={() => setQuery(tag)}>{tag}</button>)}</div>
               <div className="market-picker"><span>目标市场</span>{markets.map((item) => <button key={item.code} className={market === item.code ? 'active' : ''} onClick={() => setMarket(item.code)}><b>{item.code}</b>{item.name}</button>)}</div>
-              <div className="market-picker data-mode-picker"><span>数据模式</span>{['real', 'hybrid', 'mock'].map((item) => <button key={item} disabled={!supportedModes.includes(item)} className={researchMode === item ? 'active' : ''} onClick={() => setResearchMode(item)}>{reportModeLabels[item]}</button>)}</div>
+              <div className="market-picker data-mode-picker"><span>数据模式</span>{['real', 'hybrid', 'mock'].map((item) => <button key={item} disabled={!modeAvailable(item)} className={researchMode === item ? 'active' : ''} onClick={() => setResearchMode(item)}>{reportModeLabels[item]}</button>)}</div>
             </div>
+            <div className={`capability-note ${currentCapability?.real_available ? 'ready' : 'limited'}`}><Database size={14} /><span>{capabilityText}</span></div>
           </section>
 
           {(running || agentStep < agents.length) && (
@@ -689,6 +820,14 @@ function App() {
             </section>
           )}
 
+          {!hasReport ? (
+            <section className="report-empty" ref={resultsRef}>
+              <span className="report-empty-icon"><PackageSearch size={28} /></span>
+              <div><span className="eyebrow">等待真实研究任务</span><h2>还没有生成决策报告</h2><p>选择品类、目标市场和数据模式后启动洞察。系统不会在首屏预填趋势、价格或评论结论。</p></div>
+              <div className="empty-contract"><ShieldCheck size={16} /><span>真实模式缺少必要数据时会直接拒绝，不会自动换成演示数字。</span></div>
+            </section>
+          ) : (
+            <>
           <section className="report-header" ref={resultsRef}>
             <div className="report-product">
               {/(宠物|喂食|pet|feeder)/i.test(reportCategory)
@@ -697,13 +836,21 @@ function App() {
               <div><span className="eyebrow">机会报告 · {selectedReportMarket?.code} · {reportModeLabels[reportMode] || reportMode}</span><h2>{reportCategory}</h2><p>{selectedReportMarket?.name}市场 · 本次任务完成于 {formatReportTime(reportGeneratedAt)}</p></div>
             </div>
             <div className="report-actions">
-              <button className="secondary-button" onClick={exportReport}><Download size={16} />导出</button>
-              <button className="secondary-button" onClick={() => copyText(window.location.href, '报告链接已复制')}><ExternalLink size={16} />分享</button>
+              <button className="secondary-button" onClick={() => window.print()}><Printer size={16} />打印/PDF</button>
+              <button className="secondary-button" onClick={exportReport}><Download size={16} />JSON</button>
+              <button className="secondary-button" onClick={shareReport}><ExternalLink size={16} />分享</button>
             </div>
           </section>
 
+          <section className="monitoring-bar">
+            <div><span className="monitoring-icon"><RadioTower size={17} /></span><p><strong>市场监控快照</strong><small>{monitoring ? `最近读取 ${formatReportTime(monitoring.generated_at)} · 手动刷新` : '等待读取公开数据快照'}</small></p></div>
+            <div className="monitoring-summary"><span>当前触发</span><strong>{monitoring?.trigger_count ?? '—'}</strong><small>项阈值</small></div>
+            <div className="monitoring-summary"><span>覆盖信号</span><strong>{monitoring?.signals?.length ?? '—'}</strong><small>项</small></div>
+            <button className="secondary-button" onClick={() => loadMonitoring(reportCategory, reportMarket)} disabled={monitoringLoading}>{monitoringLoading ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}刷新快照</button>
+          </section>
+
           <section className="signal-strip">
-            <div><span className="metric-icon blue"><TrendingUp size={18} /></span><p>机会指数<small>需求、痛点与竞争空位</small></p><strong>{opportunityScore}<em>/100</em></strong></div>
+            <div><span className="metric-icon blue"><TrendingUp size={18} /></span><p>验证优先级<small>启发式指标，未用商业结果校准</small></p><strong>{opportunityScore}<em>/100</em></strong></div>
             <div><span className="metric-icon green"><MessageCircleMore size={18} /></span><p>首要隐性痛点<small>{leadPain.label}</small></p><strong>{leadPain.count}<em>条</em></strong></div>
             <div><span className="metric-icon amber"><Boxes size={18} /></span><p>需求信号<small>{demandSignal.name}</small></p><strong>{demandSignal.value}<em>{demandSignal.note}</em></strong></div>
             <div><span className="metric-icon violet"><Clock3 size={18} /></span><p>机会窗口<small>建议复核周期</small></p><strong>14<em>天</em></strong></div>
@@ -752,18 +899,18 @@ function App() {
             </article>
 
             <article className="panel supply-panel" id="supply-chain">
-              <div className="panel-head"><div><span className="eyebrow">领先指标</span><h2>供应链信号</h2></div><button className="icon-button" onClick={() => setToast('信号已刷新')} aria-label="刷新信号"><RefreshCw size={17} /></button></div>
+              <div className="panel-head"><div><span className="eyebrow">领先指标</span><h2>供应链信号</h2></div><button className="icon-button" onClick={() => loadMonitoring(reportCategory, reportMarket)} aria-label="刷新信号" disabled={monitoringLoading}><RefreshCw className={monitoringLoading ? 'spin' : ''} size={17} /></button></div>
               <div className="supply-list">
                 {insightSupplySignals.map((signal) => <div className="supply-row" key={signal.name}><div><span className={`status-dot ${signal.state}`} /><p><strong>{signal.name}</strong><small>{signal.note}</small></p></div><MiniBars values={signal.bars} state={signal.state} /><strong>{signal.value}</strong></div>)}
               </div>
-              <div className="alert-card"><AlertTriangle size={18} /><div><strong>反向条件已登记</strong><p>{pricingFailure ? `${pricingFailure.metric_to_watch} ${pricingFailure.threshold} 时重新计算定价。` : '定时增量任务完成后按阈值触发重新计算。'}</p></div><button onClick={() => setToast('阈值已进入决策卡；定时触发器属于下一阶段')}>待接入</button></div>
+              <div className="alert-card"><AlertTriangle size={18} /><div><strong>反向条件已登记</strong><p>{pricingFailure ? `${pricingFailure.metric_to_watch} ${pricingFailure.threshold} 时重新计算定价。` : '公开数据快照变化越线后重新计算。'}</p></div><button onClick={() => loadMonitoring(reportCategory, reportMarket)}>查看快照</button></div>
             </article>
           </section>
 
           <section className="evidence-panel">
             <div className="panel-head"><div><span className="eyebrow">可追溯依据</span><h2>这项决策，凭什么？</h2></div><span className="verified-pill"><ShieldCheck size={15} />{reportEvidence.length} 条结构校验通过</span></div>
             <div className="evidence-table">
-              {reportEvidence.map((item, index) => <button key={item.source} onClick={() => item.url ? window.open(item.url, '_blank', 'noopener,noreferrer') : setToast(`来源记录：${item.source}`)}><span className="evidence-index">{String(index + 1).padStart(2, '0')}</span><span className="evidence-source"><small>{item.type}</small><strong>{item.source}</strong></span><span className="evidence-claim">{item.claim}</span><strong className="evidence-value">{item.value}</strong><span className="evidence-open"><ExternalLink size={15} /></span></button>)}
+              {reportEvidence.map((item, index) => <button key={`${item.source}-${index}`} onClick={() => setSelectedEvidence(item)}><span className="evidence-index">{String(index + 1).padStart(2, '0')}</span><span className="evidence-source"><small>{item.type} · {scopeLabels[item.marketScope]} · {freshnessLabels[item.freshnessClass]}</small><strong>{item.source}</strong></span><span className="evidence-claim">{item.claim}</span><strong className="evidence-value">{item.value}</strong><span className="evidence-open"><ArrowRight size={15} /></span></button>)}
             </div>
           </section>
 
@@ -778,7 +925,7 @@ function App() {
 
           <section className="evolution-panel" id="evolution-center">
             <div className="evolution-head">
-              <div><span className="eyebrow">Harness Evolution</span><h2>策略演进中心</h2><p>失败案例不会直接改写线上策略，候选必须通过 Validation 与 Holdout 非回归门禁。</p></div>
+              <div><span className="eyebrow">Harness Evolution</span><h2>策略演进中心</h2><p>失败案例不会直接改写线上策略。当前指标来自合成规则回放，只证明门禁逻辑可复现，不代表商家经营结果。</p></div>
               <div className="evolution-head-actions">
                 <span className="policy-version"><ShieldCheck size={15} />当前 {activePolicy?.version || 'policy-v1'}</span>
                 <button className="icon-button" onClick={loadEvolution} aria-label="刷新演进状态"><RefreshCw size={17} /></button>
@@ -790,11 +937,11 @@ function App() {
             <div className="evolution-metrics">
               <div><span>待处理失败案例</span><strong>{openFailures.length}</strong><small>{openFailures[0]?.failure_type === 'weak_evidence' ? '证据门槛不足' : openFailures.length ? '等待候选生成' : '暂无开放案例'}</small></div>
               <div><span>候选版本</span><strong>{readyPolicy?.version || latestEvolutionRun?.candidate_version || '—'}</strong><small>{readyPolicy ? '评测通过，等待激活' : latestEvolutionRun?.candidate_version === activePolicy?.version ? '已激活为稳定版本' : '不会覆盖当前稳定版本'}</small></div>
-              <div><span>Validation 提升</span><strong>{latestEvolutionRun ? `+${Math.round(validationImprovement * 100)}%` : '—'}</strong><small>{latestEvolutionRun ? `${latestEvolutionRun.metrics.validation.candidate.accuracy * 100}% 准确率` : '基线与候选双回放'}</small></div>
-              <div><span>Holdout 非回归</span><strong>{latestEvolutionRun ? (latestEvolutionRun.decision === 'ready' ? '通过' : '拒绝') : '—'}</strong><small>{latestEvolutionRun ? `${latestEvolutionRun.metrics.holdout.candidate.recall * 100}% 召回率` : '保护未参与生成的数据'}</small></div>
+              <div><span>Validation 门禁变化</span><strong>{latestEvolutionRun ? `+${Math.round(validationImprovement * 100)}pp` : '—'}</strong><small>{latestEvolutionRun ? `合成回放 n=${latestEvolutionRun.metrics.validation.candidate.cases} · 规则判断准确率 ${latestEvolutionRun.metrics.validation.candidate.accuracy * 100}%` : '基线与候选双回放'}</small></div>
+              <div><span>Holdout 非回归</span><strong>{latestEvolutionRun ? (latestEvolutionRun.decision === 'ready' ? '通过' : '拒绝') : '—'}</strong><small>{latestEvolutionRun ? `合成回放 n=${latestEvolutionRun.metrics.holdout.candidate.cases} · 召回率 ${latestEvolutionRun.metrics.holdout.candidate.recall * 100}%` : '保护未参与生成的数据'}</small></div>
             </div>
             <div className="evolution-actions">
-              <p><BadgeCheck size={16} />活动策略要求至少 {activePolicy?.policy?.minimum_evidence_count || 3} 条证据、{activePolicy?.policy?.minimum_non_english_evidence || 1} 条非英语证据。</p>
+              <p><BadgeCheck size={16} />合成门禁集：Validation n={evolution?.evaluation_dataset?.validation || 0}，Holdout n={evolution?.evaluation_dataset?.holdout || 0}；活动策略要求至少 {activePolicy?.policy?.minimum_evidence_count || 3} 条证据。</p>
               <div>
                 <button className="secondary-button" onClick={rollbackEvolutionPolicy} disabled={evolutionLoading || !activePolicy?.parent_version}><History size={15} />回滚</button>
                 {readyPolicy && <button className="secondary-button activate-policy" onClick={() => activateEvolutionPolicy(readyPolicy.version)} disabled={evolutionLoading}><ShieldCheck size={15} />激活 {readyPolicy.version}</button>}
@@ -804,14 +951,16 @@ function App() {
           </section>
 
           <footer><span><Compass size={15} />先机罗盘 · 决策可追溯，结论可证伪</span><span>数据模式：{reportModeLabels[reportMode] || reportMode}{reportMode === 'real' ? ' · 当前竞品价仍需授权源' : ''}</span></footer>
+            </>
+          )}
         </div>
       </main>
 
       {selectedCard && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedCard(null)}><div className="card-modal" role="dialog" aria-modal="true" aria-label={`${selectedCard.type}详情`}><button className="modal-close icon-button" onClick={() => setSelectedCard(null)}><X size={19} /></button><CardDetail card={selectedCard} onCopy={copyText} onReview={setReview} reviewStatus={reviewStatus} evidence={reportEvidence} reportMarket={reportMarket} generatedAt={reportGeneratedAt} reportMode={reportMode} /></div></div>}
 
-      {historyOpen && <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setHistoryOpen(false)}><aside className="history-drawer"><div className="drawer-head"><div><span className="eyebrow">工作记录</span><h2>历史洞察</h2></div><button className="icon-button" onClick={() => setHistoryOpen(false)}><X size={18} /></button></div>{[
-        ['宠物自动喂食器', '巴西', '刚刚', '86'], ['便携榨汁机', '墨西哥', '昨天', '74'], ['降噪耳机', '日本', '8月10日', '69'],
-      ].map((item, index) => <button className="history-item" key={item[0]} onClick={() => { setQuery(item[0]); setHistoryOpen(false); setToast(`已载入：${item[0]}`); }}><span className="history-icon"><FileText size={17} /></span><span><strong>{item[0]}</strong><small>{item[1]} · {item[2]}</small></span><b>{item[3]}</b></button>)}</aside></div>}
+      {selectedEvidence && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedEvidence(null)}><div className="card-modal evidence-modal" role="dialog" aria-modal="true" aria-label="证据详情"><button className="modal-close icon-button" onClick={() => setSelectedEvidence(null)}><X size={19} /></button><EvidenceDetail evidence={selectedEvidence} /></div></div>}
+
+      {historyOpen && <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setHistoryOpen(false)}><aside className="history-drawer"><div className="drawer-head"><div><span className="eyebrow">工作记录</span><h2>历史洞察</h2></div><button className="icon-button" onClick={() => setHistoryOpen(false)}><X size={18} /></button></div>{hasReport ? <button className="history-item" onClick={() => setHistoryOpen(false)}><span className="history-icon"><FileText size={17} /></span><span><strong>{reportCategory}</strong><small>{selectedReportMarket?.name} · {formatReportTime(reportGeneratedAt)}</small></span><b>{opportunityScore}</b></button> : <div className="history-empty"><History size={24} /><strong>暂无真实洞察记录</strong><p>完成一次研究任务后，报告会出现在这里。</p></div>}</aside></div>}
       {toast && <div className="toast"><Check size={16} />{toast}</div>}
     </div>
   );
@@ -829,6 +978,24 @@ function CardDetail({ card, onCopy, onReview, reviewStatus, evidence, reportMark
       <div className="detail-two-col"><div className="detail-section hook-box"><h3><Users size={17} />种子验证</h3><p><b>种子人群</b> {card.hook?.audience}</p><p><b>承接渠道</b> {card.hook?.channel}</p><div className="copy-hook"><span>{card.hook?.message}</span><button onClick={() => onCopy(card.hook?.message)}><Clipboard size={15} />复制</button></div></div><div className="detail-section failure-box"><h3><AlertTriangle size={17} />什么时候失效</h3>{(card.failureConditions || [{ condition: '关键市场信号越过阈值' }]).slice(0, 2).map((item) => <p key={item.condition}>{item.condition}</p>)}<button><Bell size={15} />失效条件已登记</button></div></div>
       <div className="modal-compliance"><ShieldCheck size={17} /><span>AI 生成 · {reportModeLabels[reportMode] || reportMode} · 需人工复核<small>{detailEvidence.map((item) => item.source).join(' / ')} · 任务完成于 {formatReportTime(generatedAt)}</small></span></div>
       <div className="modal-actions"><span>复核这张卡</span><div><button className={reviewStatus === 'approved' ? 'active approved' : ''} onClick={() => onReview('approved')}><CheckCircle2 size={16} />采纳</button><button className={reviewStatus === 'discussed' ? 'active discussed' : ''} onClick={() => onReview('discussed')}><MessageCircleMore size={16} />待议</button><button className={reviewStatus === 'rejected' ? 'active rejected' : ''} onClick={() => onReview('rejected')}><XCircle size={16} />驳回</button></div></div>
+    </div>
+  );
+}
+
+function EvidenceDetail({ evidence }) {
+  return (
+    <div className="modal-content">
+      <div className="modal-title evidence-modal-title"><span className="modal-icon blue"><Database size={20} /></span><div><span className="eyebrow">{evidence.type} · {scopeLabels[evidence.marketScope]}</span><h2>{evidence.source}</h2></div></div>
+      <div className="evidence-detail-grid">
+        <div><span>证据结论</span><p>{evidence.claim}</p></div>
+        <div><span>原始值 / 原语</span><blockquote>{evidence.value}</blockquote></div>
+        <div><span>观察期</span><strong>{evidence.observationPeriod || (evidence.observedAt ? formatReportTime(evidence.observedAt) : '待确认')}</strong></div>
+        <div><span>读取时间</span><strong>{evidence.collectedAt ? formatReportTime(evidence.collectedAt) : '待确认'}</strong></div>
+        <div><span>时间属性</span><strong>{freshnessLabels[evidence.freshnessClass]}</strong></div>
+        <div><span>来源市场</span><strong>{evidence.sourceMarket || 'global / 未标注'}</strong></div>
+      </div>
+      <div className="modal-compliance"><ShieldCheck size={17} /><span>{evidence.evidenceKind === 'derived' ? '模型派生证据，结论已回指源记录' : '来源证据'}<small>{evidence.modelId ? `模型：${evidence.modelId}` : '未经过模型改写'}</small></span></div>
+      {evidence.url && <div className="modal-actions"><span>外部来源</span><div><button onClick={() => window.open(evidence.url, '_blank', 'noopener,noreferrer')}><ExternalLink size={16} />打开来源页面</button></div></div>}
     </div>
   );
 }

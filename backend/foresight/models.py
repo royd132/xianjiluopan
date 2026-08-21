@@ -48,6 +48,11 @@ class EvidenceItem(BaseModel):
     url: str | None = None
     language: str = "en"
     collected_at: datetime
+    observed_at: datetime | None = None
+    observation_period: str | None = None
+    freshness_class: Literal["live", "recent", "historical", "structural", "unknown"] = "unknown"
+    market_scope: Literal["target_market", "cross_market", "category_proxy", "macro", "unknown"] = "unknown"
+    source_market: str | None = None
     confidence: float = Field(ge=0, le=1)
     verified: bool = True
     evidence_kind: Literal["source", "derived", "mock"] = "source"
@@ -111,6 +116,8 @@ class PainPoint(BaseModel):
     sample_original: str
     sample_translation: str
     source: str = "unknown"
+    source_market: str | None = None
+    market_scope: Literal["target_market", "cross_market", "category_proxy", "unknown"] = "unknown"
     extracted_by: Literal["llm", "keyword", "mock"] = "mock"
     verification: dict[str, Any] = Field(default_factory=dict)
 

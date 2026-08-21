@@ -7,7 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .data import MockDataProvider, resolve_category, resolve_market
+from .data import (
+    CATEGORY_PROFILES,
+    GENERIC_CATEGORY_PROFILE,
+    MockDataProvider,
+    resolve_category,
+    resolve_market,
+)
 from .model_adapters import ModelAdapterError, QwenReviewExtractor, ReviewRecord
 from .models import EvidenceItem, PainPoint, ResearchRequest, SupplySignal
 
@@ -48,6 +54,16 @@ OLIST_CATEGORIES = {
 }
 
 WORLD_BANK_MARKETS = {"BR": "BRA", "MX": "MEX", "MY": "MYS", "US": "USA"}
+
+
+def _observed_at(value: str | int) -> datetime:
+    text = str(value).strip()
+    if len(text) == 4 and text.isdigit():
+        return datetime(int(text), 12, 31, tzinfo=timezone.utc)
+    parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 PAIN_PATTERNS = {
     "noise": (r"\bnoisy\b", r"\btoo loud\b", r"\bbuzzing\b", r"\bhumming\b"),
@@ -137,6 +153,123 @@ class RealDataProvider:
             "datasets_dir": str(self.datasets_dir),
         }
 
+    def scenario_capabilities(self) -> list[dict[str, Any]]:
+        status = self.data_status()
+        profiles = [*CATEGORY_PROFILES, GENERIC_CATEGORY_PROFILE]
+        capabilities: list[dict[str, Any]] = []
+        for market in FX_FILES:
+            for profile in profiles:
+                category_key = str(profile["key"])
+                amazon_price = category_key == "pet_feeder" and status["amazon_metadata"]
+                olist_price = market == "BR" and category_key in OLIST_CATEGORIES and status["olist"]
+                price_source = (
+                    "Amazon Reviews 2023 商品快照"
+                    if amazon_price
+                    else "Olist 2016-2018 历史成交"
+                    if olist_price
+                    else None
+                )
+                runtime_missing = [
+                    name
+                    for name in ("fx", "reviews", "trade", "gscpi", "qwen")
+                    if not status[name]
+                ]
+                blocking_reasons = [f"runtime:{name}" for name in runtime_missing]
+                if not price_source:
+                    blocking_reasons.append("source_backed_price")
+                known_gaps = []
+                if market != "BR" or not status["olist"]:
+                    known_gaps.append("native_market_reviews")
+                known_gaps.append("current_competitor_listings")
+                capabilities.append(
+                    {
+                        "market": market,
+                        "category_key": category_key,
+                        "real_available": not blocking_reasons,
+                        "hybrid_available": bool(status["hybrid_ready"]),
+                        "price_source": price_source,
+                        "review_scope": "target-market category proxy" if market == "BR" and status["olist"] else "cross-market product reviews",
+                        "blocking_reasons": blocking_reasons,
+                        "known_gaps": known_gaps,
+                        "missing_signals": blocking_reasons,
+                    }
+                )
+        return capabilities
+
+    def scenario_capability(self, category: str, market: str) -> dict[str, Any]:
+        category_key = str(resolve_category(category)["key"])
+        market_code = market.upper()
+        capability = next(
+            (
+                item
+                for item in self.scenario_capabilities()
+                if item["market"] == market_code and item["category_key"] == category_key
+            ),
+            None,
+        )
+        if capability is None:
+            raise ProviderUnavailableError(f"Unsupported market/category scenario: {market_code}/{category_key}")
+        return capability
+
+    def monitoring_snapshot(self, category: str, market: str) -> dict[str, Any]:
+        profile = resolve_category(category)
+        market_code = market.upper()
+        fx = self._fx_signal(market_code)
+        trade = self._trade_signal(market_code, str(profile["hs_code"]))
+        gscpi = self._gscpi_signal()
+        lsci = self._lsci_signal(market_code)
+        signals = [
+            {
+                "key": "fx",
+                "label": fx["label"],
+                "observed_at": fx["latest_date"],
+                "value": fx["latest_value"],
+                "change_pct": fx["change_pct"],
+                "threshold": "abs(30d) >= 5%",
+                "triggered": abs(fx["change_pct"]) >= 5,
+            },
+            {
+                "key": "trade",
+                "label": f'{market_code} HS{profile["hs_code"]} 进口额',
+                "observed_at": str(trade["latest_year"]),
+                "value": trade["latest_value"],
+                "change_pct": trade["change_pct"],
+                "threshold": "abs(YoY) >= 20%",
+                "triggered": abs(trade["change_pct"]) >= 20,
+            },
+            {
+                "key": "gscpi",
+                "label": "全球供应链压力指数 GSCPI",
+                "observed_at": gscpi["latest_date"],
+                "value": gscpi["latest_value"],
+                "change_pct": gscpi["change_pct"],
+                "threshold": "指数 >= 1 或月变动 >= 15%",
+                "triggered": gscpi["latest_value"] >= 1 or abs(gscpi["change_pct"]) >= 15,
+            },
+        ]
+        if lsci:
+            signals.append(
+                {
+                    "key": "lsci",
+                    "label": f"{market_code} 班轮运输连接度",
+                    "observed_at": str(lsci["latest_year"]),
+                    "value": lsci["latest_value"],
+                    "change_pct": lsci["change_pct"],
+                    "threshold": "结构性基线，不触发短期告警",
+                    "triggered": False,
+                }
+            )
+        return {
+            "category": category,
+            "category_key": profile["key"],
+            "market": market_code,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "schedule_status": "manual_snapshot",
+            "signals": signals,
+            "trigger_count": sum(item["triggered"] for item in signals),
+            "capability": self.scenario_capability(category, market_code),
+        }
+
     async def collect_hybrid(self, request: ResearchRequest) -> dict[str, Any]:
         return await self._collect(request, strict_model=False)
 
@@ -145,6 +278,12 @@ class RealDataProvider:
         if not status["real_ready"]:
             missing = [name for name in ("fx", "reviews", "trade", "gscpi", "qwen") if not status[name]]
             raise ProviderUnavailableError("Real mode is missing: " + ", ".join(missing))
+        capability = self.scenario_capability(request.category, request.market)
+        if not capability["real_available"]:
+            raise ProviderUnavailableError(
+                "Real mode is unavailable for this market/category: "
+                + ", ".join(capability["blocking_reasons"])
+            )
         return await self._collect(request, strict_model=True)
 
     async def _collect(self, request: ResearchRequest, strict_model: bool) -> dict[str, Any]:
@@ -295,6 +434,7 @@ class RealDataProvider:
             "community": market["community"],
             "anchor_price": anchor_price,
             "gross_margin_pct": category["gross_margin_pct"],
+            "gross_margin_status": "planning_hypothesis",
             "blue_ocean_index": round(
                 min(
                     0.95,
@@ -305,9 +445,10 @@ class RealDataProvider:
                 2,
             ),
             "opportunity_score_basis": "grounded_review_pain + UN_Comtrade_growth",
+            "opportunity_score_calibration": "heuristic_v1_not_outcome_calibrated",
             "gap_competitors": 0,
             "competitive_data_mode": "not_collected",
-            "repurchase_signal": category["repurchase_signal"],
+            "repurchase_signal": "unverified",
             "freight_metric": "GSCPI 月度变化",
             "monitoring_status": "public-data-cache",
             "mock_scope": ", ".join(fallback_scope) if fallback_scope else "none",
@@ -436,6 +577,8 @@ class RealDataProvider:
                     sample_original=item["sample_original"],
                     sample_translation=item["sample_translation"],
                     source="Amazon Reviews 2023",
+                    source_market="global",
+                    market_scope="cross_market",
                     extracted_by="llm",
                     verification={
                         "model": self.model_adapter.model,
@@ -473,6 +616,8 @@ class RealDataProvider:
                     sample_original=str(rows[0].get("text") or rows[0].get("title") or "")[:240],
                     sample_translation=f"规则抽取：{PAIN_LABELS[pain_type]}",
                     source="Amazon Reviews 2023",
+                    source_market="global",
+                    market_scope="cross_market",
                     extracted_by="keyword",
                     verification={"source_record_ids": source_ids, "review_count_scanned": len(reviews)},
                 )
@@ -533,7 +678,7 @@ class RealDataProvider:
 
     def _lsci_signal(self, market: str) -> dict[str, Any] | None:
         target = WORLD_BANK_MARKETS.get(market)
-        if not target:
+        if not target or not self.lsci_path.is_file():
             return None
         with self.lsci_path.open(newline="", encoding="utf-8-sig") as handle:
             rows = [row for row in csv.DictReader(handle) if row["market"] == target]
@@ -663,6 +808,11 @@ class RealDataProvider:
                 raw_value=f'{fx["latest_date"]}: {fx["latest_value"]} {fx["unit"]}',
                 url="https://frankfurter.dev/",
                 collected_at=now,
+                observed_at=_observed_at(fx["latest_date"]),
+                observation_period=f'{fx["previous_date"]} to {fx["latest_date"]}',
+                freshness_class="live",
+                market_scope="target_market",
+                source_market=request.market.upper(),
                 confidence=0.96,
                 verified=True,
                 source_record_ids=[fx["latest_date"], fx["previous_date"]],
@@ -674,6 +824,11 @@ class RealDataProvider:
                 raw_value=f'{trade["latest_year"]}: USD {trade["latest_value"]:,.0f}',
                 url="https://comtradeplus.un.org/",
                 collected_at=now,
+                observed_at=_observed_at(trade["latest_year"]),
+                observation_period=str(trade["latest_year"]),
+                freshness_class="structural",
+                market_scope="target_market",
+                source_market=request.market.upper(),
                 confidence=0.92,
                 verified=True,
                 source_record_ids=[f'{request.market.upper()}:{trade["latest_year"]}'],
@@ -685,6 +840,11 @@ class RealDataProvider:
                 raw_value=f'{gscpi["latest_date"]}: {gscpi["latest_value"]:+.3f}',
                 url="https://www.newyorkfed.org/research/policy/gscpi",
                 collected_at=now,
+                observed_at=_observed_at(gscpi["latest_date"]),
+                observation_period=gscpi["latest_date"],
+                freshness_class="recent",
+                market_scope="macro",
+                source_market="global",
                 confidence=0.95,
                 verified=True,
                 source_record_ids=[gscpi["latest_date"]],
@@ -699,6 +859,11 @@ class RealDataProvider:
                     raw_value=f'{lsci["latest_year"]}: {lsci["latest_value"]:.3f}',
                     url="https://data.worldbank.org/indicator/IS.SHP.GCNW.XQ",
                     collected_at=now,
+                    observed_at=_observed_at(lsci["latest_year"]),
+                    observation_period=str(lsci["latest_year"]),
+                    freshness_class="structural",
+                    market_scope="target_market",
+                    source_market=request.market.upper(),
                     confidence=0.9,
                     verified=True,
                     source_record_ids=[f'{request.market.upper()}:{lsci["latest_year"]}'],
@@ -717,6 +882,11 @@ class RealDataProvider:
                     url="https://github.com/olist/work-at-olist-data",
                     language="pt",
                     collected_at=now,
+                    observed_at=_observed_at("2018"),
+                    observation_period=olist["period"],
+                    freshness_class="historical",
+                    market_scope="category_proxy",
+                    source_market="BR",
                     confidence=0.78,
                     verified=True,
                     source_record_ids=[olist["category"], olist["period"]],
@@ -733,6 +903,11 @@ class RealDataProvider:
                         url="https://github.com/olist/work-at-olist-data",
                         language="pt",
                         collected_at=now,
+                        observed_at=_observed_at("2018"),
+                        observation_period=olist["period"],
+                        freshness_class="historical",
+                        market_scope="category_proxy",
+                        source_market="BR",
                         confidence=0.82,
                         verified=True,
                         source_record_ids=[review["record_id"]],
@@ -750,6 +925,11 @@ class RealDataProvider:
                     raw_value=f'P25=US${p25:.2f}, median=US${amazon_price["median_price"]:.2f}, P75=US${p75:.2f}',
                     url="https://amazon-reviews-2023.github.io/",
                     collected_at=now,
+                    observed_at=_observed_at("2023"),
+                    observation_period=amazon_price["period"],
+                    freshness_class="historical",
+                    market_scope="cross_market",
+                    source_market="global",
                     confidence=0.86,
                     verified=True,
                     source_record_ids=[amazon_price["period"]],
@@ -766,6 +946,11 @@ class RealDataProvider:
                     raw_value=point.sample_original,
                     url="https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
                     collected_at=now,
+                    observed_at=_observed_at("2023"),
+                    observation_period="Amazon Reviews 2023 snapshot",
+                    freshness_class="historical",
+                    market_scope=point.market_scope,
+                    source_market=point.source_market,
                     confidence=round(point.sentiment_intensity, 2),
                     verified=point.extracted_by != "mock",
                     evidence_kind="derived" if point.extracted_by != "mock" else "mock",

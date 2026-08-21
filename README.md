@@ -89,7 +89,7 @@
 |---|---|---|
 | 决策工作流 | 六 Agent、四卡、证据链、反向条件、人工复核 | 商家共创优化卡片字段与行业模板 |
 | 冷启动数据 | Mock / Hybrid / Real 三模式；BR 主场景真实闭环 | 当前 listing 授权源、MY 原语数据和定时增量 |
-| 实时能力 | SSE 推送任务执行事件 | 定时市场快照、变化检测、阈值告警 |
+| 实时能力 | SSE 推送任务执行事件；手动市场快照与阈值触发计数 | 后台定时增量与通知投递 |
 | 自进化 | 反馈案例、策略候选、Validation/Holdout、人工激活与回滚 | 合规样本充足后评估 Prompt/Skill 或模型优化 |
 
 ## 🏗 系统架构
@@ -223,7 +223,7 @@ npm.cmd run dev -- --port 4173
 
 ### 真实数据 + Qwen 报告
 
-先下载本地数据缓存，并在 `.env` 配置 `QWEN_API_KEY`：
+先下载本地数据缓存，并在 `.env` 配置 `QWEN_API_KEY`。API 启动时会自动读取仓库根目录的 `.env`：
 
 ```powershell
 pip install -e ".[data]"
@@ -250,6 +250,7 @@ $env:FORESIGHT_DEMO_READ_ONLY="true"
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/v1/health` | Runtime 健康检查 |
+| GET | `/api/v1/monitoring?category=&market=` | 读取市场信号快照、观察日期与阈值触发数 |
 | POST | `/api/v1/research` | 创建研究任务 |
 | GET | `/api/v1/research/{id}` | 查询状态和四卡结果 |
 | GET | `/api/v1/research/{id}/events` | SSE 事件流 |
@@ -385,7 +386,9 @@ npm.cmd run build
 | `hybrid` | 已实现 | 公开数据优先；模型失败可规则回退，回退范围写入结果 |
 | `real` | 已实现 | 要求数据缓存、Qwen 和源记录回指同时成立，否则拒绝任务 |
 
-Mock 数据不会冒充真实发现。页面、API 和导出结果均披露数据模式。
+Mock 数据不会冒充真实发现。页面、API 和导出结果均披露数据模式。`/api/v1/health` 同时返回市场 × 品类能力矩阵，区分真实模式阻断项与已知数据缺口；页面只在当前组合满足合同时开放 `real`。
+
+证据读取时间不等于数据发生时间。每条真实证据包含观察日期/区间、时间属性和市场适用范围；历史快照、结构性基线、跨市场评论与目标市场证据在 UI 中分别标记。
 
 ### 自进化边界
 

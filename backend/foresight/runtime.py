@@ -30,7 +30,7 @@ from .models import (
     ReviewRequest,
     SupplySignal,
 )
-from .real_data_provider import RealDataProvider
+from .real_data_provider import ProviderUnavailableError, RealDataProvider
 
 
 class UnsupportedResearchModeError(ValueError):
@@ -83,6 +83,17 @@ class ForesightRuntime:
         if status["real_ready"]:
             modes.add("real")
         return frozenset(modes)
+
+    def scenario_capabilities(self) -> list[dict[str, Any]]:
+        return self.real_provider.scenario_capabilities()
+
+    def monitoring_snapshot(self, category: str, market: str) -> dict[str, Any]:
+        if "hybrid" not in self.supported_modes:
+            raise UnsupportedResearchModeError("Monitoring requires the public-data cache")
+        try:
+            return self.real_provider.monitoring_snapshot(category, market)
+        except ProviderUnavailableError as exc:
+            raise UnsupportedResearchModeError(str(exc)) from exc
 
     def install_provider(
         self,
@@ -263,7 +274,15 @@ class ForesightRuntime:
 
     def _validate_request_mode(self, request: ResearchRequest) -> None:
         if request.mode in self.supported_modes:
-            return
+            if request.mode != "real":
+                return
+            capability = self.real_provider.scenario_capability(request.category, request.market)
+            if capability["real_available"]:
+                return
+            raise UnsupportedResearchModeError(
+                f"Research mode 'real' is unavailable for {request.market.upper()} / "
+                f"{capability['category_key']}. Missing: {', '.join(capability['blocking_reasons'])}."
+            )
         supported = ", ".join(sorted(self.supported_modes))
         raise UnsupportedResearchModeError(
             f"Research mode '{request.mode}' is not available. "

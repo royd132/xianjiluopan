@@ -10,10 +10,14 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from dotenv import load_dotenv
 
 from .data import MockDataProvider
 from .models import ProviderReloadRequest, ResearchRequest, ReviewRequest
 from .runtime import ForesightRuntime, UnsupportedResearchModeError
+
+
+load_dotenv(Path(".env"), override=False)
 
 
 app = FastAPI(
@@ -61,6 +65,7 @@ async def health() -> dict:
         "policy_version": runtime.evolution.active_policy()["version"],
         "extension_count": len(runtime.harness.plugins.list()),
         "supported_modes": sorted(runtime.supported_modes),
+        "scenario_capabilities": runtime.scenario_capabilities(),
         "mutation_protection": (
             "read-only"
             if os.getenv("FORESIGHT_DEMO_READ_ONLY", "").lower() in {"1", "true", "yes", "on"}
@@ -70,6 +75,14 @@ async def health() -> dict:
         ),
         "mode": "offline-ready",
     }
+
+
+@app.get("/api/v1/monitoring")
+async def monitoring_snapshot(category: str = "pet feeder", market: str = "BR") -> dict:
+    try:
+        return runtime.monitoring_snapshot(category, market)
+    except (UnsupportedResearchModeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/runtime/extensions")

@@ -8,6 +8,18 @@ def test_health_endpoint():
     assert response.status_code == 200
     assert response.json()["runtime"] == "multi-agent"
     assert response.json()["harness"] == "harness-v3"
+    assert isinstance(response.json()["scenario_capabilities"], list)
+
+
+def test_monitoring_endpoint_returns_an_explicit_schedule_status():
+    response = TestClient(app).get(
+        "/api/v1/monitoring",
+        params={"category": "pet feeder", "market": "BR"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["schedule_status"] == "manual_snapshot"
+    assert "signals" in response.json()
 
 
 def test_runtime_extensions_endpoint():
@@ -23,11 +35,11 @@ def test_runtime_extensions_endpoint():
 def test_research_endpoint_rejects_unavailable_real_mode():
     response = TestClient(app).post(
         "/api/v1/research",
-        json={"category": "pet feeder", "market": "BR", "mode": "real"},
+        json={"category": "noise cancelling headphones", "market": "US", "mode": "real"},
     )
 
     assert response.status_code == 501
-    assert "not available" in response.json()["detail"]
+    assert "unavailable" in response.json()["detail"]
 
 
 def test_admin_token_protects_runtime_mutations(monkeypatch):

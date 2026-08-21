@@ -16,6 +16,7 @@ DEFAULT_POLICY: dict[str, Any] = {
     "require_failure_condition": True,
     "confidence_penalty": 0.0,
     "maximum_evidence_age_days": 45,
+    "minimum_recent_evidence": 0,
 }
 
 
@@ -39,7 +40,7 @@ def evaluate_decision_cards(
     adjusted: list[DecisionCard] = []
     checks = 0
     for card in cards:
-        checks += 7
+        checks += 8
         if len(card.evidences) < int(policy["minimum_evidence_count"]):
             failures.append(f"{card.card_id}: missing evidence")
         verified_count = sum(evidence.verified for evidence in card.evidences)
@@ -55,8 +56,20 @@ def evaluate_decision_cards(
         non_english_count = sum(evidence.language != "en" for evidence in card.evidences)
         if non_english_count < int(policy["minimum_non_english_evidence"]):
             failures.append(f"{card.card_id}: missing non-English evidence")
-        evidence_age = max((now - evidence.collected_at).days for evidence in card.evidences)
-        if evidence_age > int(policy["maximum_evidence_age_days"]):
+        recent_evidence = [
+            evidence
+            for evidence in card.evidences
+            if evidence.freshness_class in {"live", "recent"}
+        ]
+        if len(recent_evidence) < int(policy.get("minimum_recent_evidence", 0)):
+            failures.append(f"{card.card_id}: insufficient recent evidence")
+        stale_evidence = [
+            evidence
+            for evidence in recent_evidence
+            if (now - (evidence.observed_at or evidence.collected_at)).days
+            > int(policy["maximum_evidence_age_days"])
+        ]
+        if stale_evidence:
             failures.append(f"{card.card_id}: stale evidence")
         penalty = float(policy.get("confidence_penalty", 0.0))
         adjusted.append(

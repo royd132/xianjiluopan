@@ -182,6 +182,64 @@ def test_real_mode_uses_grounded_model_and_harness_tool_snapshot(tmp_path):
     asyncio.run(scenario())
 
 
+def test_real_evidence_preserves_observation_time_and_market_scope(tmp_path):
+    async def scenario():
+        datasets = tmp_path / "datasets"
+        build_public_dataset_fixture(datasets)
+        provider = RealDataProvider(datasets, model_adapter=FakeGroundedExtractor())
+        runtime = ForesightRuntime(tmp_path / ".foresight", datasets_dir=datasets, real_provider=provider)
+
+        result = await runtime.run(ResearchRequest(category="pet feeder", market="BR", mode="real"))
+        evidences = result.cards[0].evidences
+
+        fx = next(item for item in evidences if item.freshness_class == "live")
+        amazon_review = next(
+            item
+            for item in evidences
+            if item.market_scope == "cross_market" and item.source_type == "review"
+        )
+        assert fx.observed_at.date().isoformat() == "2026-08-20"
+        assert fx.market_scope == "target_market"
+        assert amazon_review.freshness_class == "historical"
+        assert amazon_review.source_market == "global"
+        assert amazon_review.observation_period == "Amazon Reviews 2023 snapshot"
+
+    asyncio.run(scenario())
+
+
+def test_capability_matrix_rejects_real_mode_without_source_backed_price(tmp_path):
+    datasets = tmp_path / "datasets"
+    build_public_dataset_fixture(datasets)
+    provider = RealDataProvider(datasets, model_adapter=FakeGroundedExtractor())
+    runtime = ForesightRuntime(tmp_path / ".foresight", datasets_dir=datasets, real_provider=provider)
+
+    pet_feeder = runtime.real_provider.scenario_capability("pet feeder", "BR")
+    headphones = runtime.real_provider.scenario_capability("noise cancelling headphones", "US")
+
+    assert pet_feeder["real_available"] is True
+    assert pet_feeder["price_source"].startswith("Amazon Reviews 2023")
+    assert headphones["real_available"] is False
+    assert "source_backed_price" in headphones["blocking_reasons"]
+    assert "current_competitor_listings" in pet_feeder["known_gaps"]
+    with pytest.raises(UnsupportedResearchModeError, match="Missing"):
+        runtime.create_task(ResearchRequest(category="noise cancelling headphones", market="US", mode="real"))
+
+
+def test_monitoring_snapshot_reports_manual_status_and_real_observation_dates(tmp_path):
+    datasets = tmp_path / "datasets"
+    build_public_dataset_fixture(datasets)
+    provider = RealDataProvider(datasets, model_adapter=FakeGroundedExtractor())
+
+    snapshot = provider.monitoring_snapshot("pet feeder", "BR")
+
+    assert snapshot["schedule_status"] == "manual_snapshot"
+    assert snapshot["capability"]["real_available"] is True
+    signals = {item["key"]: item for item in snapshot["signals"]}
+    assert signals["fx"]["observed_at"] == "2026-08-20"
+    assert signals["trade"]["observed_at"] == "2025"
+    assert snapshot["trigger_count"] >= 0
+
+
 def test_concurrent_mock_and_real_tasks_keep_provider_modes_isolated(tmp_path):
     async def scenario():
         datasets = tmp_path / "datasets"
