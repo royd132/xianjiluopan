@@ -369,6 +369,7 @@ npm.cmd run build
 - [系统架构](docs/系统架构.md)
 - [Agent 与事件协议](docs/Agent与事件协议.md)
 - [Harness、热插拔与受控自进化 v3](docs/Harness与自进化_v3.md)
+- [综合架构评审与重构路线（AutoSkill / 主流 Harness / 获奖 Agent 对照）](docs/综合架构评审与重构路线_2026-08.md)
 - [真实数据、冷启动与证据边界](docs/真实数据与冷启动.md)
 - [开发与扩展指南](docs/开发指南.md)
 - [原始完整 PRD](docs/PRD_先机罗盘_v1.0.md)
