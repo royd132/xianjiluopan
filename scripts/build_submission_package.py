@@ -132,13 +132,13 @@ def build_architecture():
 
 
 def build_workflow():
-    img, draw = base_canvas("从问题到四张决策卡，再到变化触发重算", "AI AGENT WORKFLOW")
+    img, draw = base_canvas("从进入问题到可证伪决策，再到变化触发重算", "AI AGENT WORKFLOW")
     steps = [
         ("01", "任务输入", "品类 × 国家 × 数据模式"),
         ("02", "能力检查", "真实数据不足则拒绝"),
         ("03", "数据采集", "价格 / 评论 / 贸易 / 汇率 / 物流"),
         ("04", "并行分析", "Review / Market / Supply Chain"),
-        ("05", "决策编译", "选品 / 定价 / 竞争 / 人群"),
+        ("05", "决策编译", "选品 / 定价 / 竞争 / 验证"),
         ("06", "安全门禁", "证据数 / 新鲜度 / 失败条件"),
         ("07", "人工复核", "采纳 / 待议 / 驳回"),
         ("08", "信号监控", "阈值触发受影响卡重算"),
@@ -223,14 +223,14 @@ def build_pdf(arch_path, flow_path):
         return t
 
     story = []
-    story += [Spacer(1, 34 * mm), P("先机罗盘", title), P("Foresight Compass", subtitle), Spacer(1, 8 * mm)]
-    story += [P("用可核查数据回答：一个新品是否值得进入某个海外市场？", callout)]
+    story += [Spacer(1, 30 * mm), P("先机罗盘", title), P("跨境新品首单前的证据决策系统", subtitle), P("Foresight Compass", subtitle), Spacer(1, 8 * mm)]
+    story += [P("用可核查数据回答：进入、继续验证，还是停止？", callout)]
     story += [Spacer(1, 12 * mm), P("场景三 · AI 市场洞察", subtitle), Spacer(1, 3 * mm)]
     story += [table([
         ["团队", "队长及联系方式", "队员"],
         ["菜菜唠唠", "邹柏良 · 13204942689", "周展序、向顺、庞佳轩、董志兵"],
     ], [42 * mm, 58 * mm, 74 * mm])]
-    story += [Spacer(1, 34 * mm), P("提交版本 v1.0 · 2026-08-21", subtitle), P("代码仓库 github.com/royd132/xianjiluopan", subtitle), PageBreak()]
+    story += [Spacer(1, 30 * mm), P("提交版本 v1.1 · 2026-08-24", subtitle), P("代码仓库 github.com/royd132/xianjiluopan", subtitle), PageBreak()]
 
     story += [P("01 具体业务问题", h1)]
     story += [P("跨境卖家真正高风险的时刻，是付样品费、开模、下首批订单或投入广告之前。数据不少，但价格、评论、贸易、汇率和供应链信息相互割裂，最后仍常靠经验拍板。", body)]
@@ -242,20 +242,19 @@ def build_pdf(arch_path, flow_path):
         "报告停留在描述趋势，没有给出下一步验证动作；",
         "市场变化后结论不会主动失效，也缺少停止条件。",
     ])
-    story += [P("目标用户", h2)] + bullets([
-        "1-5 人、没有本地研究团队的中小跨境卖家；",
-        "准备进入陌生国家的平台卖家和工厂型卖家；",
-        "需要批量交付研究的代运营与出海服务商。",
+    story += [P("核心用户", h2)] + bullets([
+        "1-5 人、没有海外本地研究团队、准备把成熟供应链带入陌生市场的中小跨境卖家。",
+        "工厂型卖家、代运营和出海服务商属于后续扩展客户。",
     ])
-    story += [P("一句话定位", h2), P("先机罗盘把分散的市场数据编译成可验证的选品、定价、竞争和种子人群决策，让卖家在不可逆投入前先验证、再投入。", body), PageBreak()]
+    story += [P("一句话定位", h2), P("先机罗盘将原语评论、竞品价格、贸易、汇率与物流信号编译为可追溯、可过期、可推翻的 Go / Validate / Stop 决策。", body), PageBreak()]
 
     story += [P("02 产品功能", h1)]
     feature_rows = [["核心功能", "用户得到什么", "可信机制"],
-        ["新品进入决策", "输入品类与国家，得到场景能力边界", "Real / Hybrid / Mock 明示；数据不足直接拒绝"],
-        ["四类决策卡", "选品、定价、竞争、种子人群的具体动作", "证据、置信度、有效期、失败条件、人工状态"],
-        ["多语言痛点", "从原语评论发现“喜欢但是”的真实缺陷", "模型返回记录 ID，代码取回原文"],
-        ["变化触发", "汇率、物流、价格变化后局部更新建议", "数据源级 SLA、阈值、失效策略"],
-        ["受控演进", "把采纳/驳回沉淀为可验证的策略改进", "Validation / Holdout 回放 + 人工激活"],
+        ["新品进入诊断", "输出 Go / Validate / Stop、证据冲突和待补信息", "数据不足时转为待验证，不输出伪确定性"],
+        ["原语痛点雷达", "从当地语言评论发现“喜欢但是”的真实缺陷", "模型返回记录 ID，代码取回原文"],
+        ["经营决策处方", "选品、定价、竞争的具体动作", "证据、有效期、失败条件、人工状态"],
+        ["最小市场验证", "明确人群、渠道、样本量、问题和停止线", "先验证再备货"],
+        ["有效期监控", "关键变化后局部更新建议", "数据源级 SLA、阈值、失效策略"],
     ]
     story += [table(feature_rows, [35 * mm, 66 * mm, 73 * mm]), Spacer(1, 6 * mm)]
     story += [P("真实任务原型", h2), RLImage(str(SCREENSHOTS / "01_研究入口.png"), width=174 * mm, height=92 * mm), P("图 1：巴西 × 宠物自动喂食器真实任务。页面显示数据模式、四张决策卡及市场监控状态。", small), PageBreak()]
@@ -265,7 +264,7 @@ def build_pdf(arch_path, flow_path):
         "选品方向：优先验证哪个差异化问题；",
         "定价策略：以什么价格区间开始测试，还缺哪些成本；",
         "竞争打法：应该审计哪个表达空位；",
-        "种子人群：先找谁、在哪里找、如何测试意向。",
+        "最小市场验证：找谁、在哪里验证、需要多少样本、什么情况下停止。",
     ])
     story += [P("每张卡还必须回答：证据是什么、结论能维持多久、什么变化会推翻它、谁复核过。", callout), PageBreak()]
 
@@ -279,12 +278,11 @@ def build_pdf(arch_path, flow_path):
     ], [35 * mm, 62 * mm, 77 * mm]), PageBreak()]
 
     story += [P("05 技术架构与创新", h1), RLImage(str(arch_path), width=174 * mm, height=98 * mm), P("图 4：Runtime、Harness、Agent、Provider 与治理闭环。", small)]
-    story += [P("核心创新不是简单堆叠 Agent", h2)] + bullets([
-        "共享黑板只允许结构化 Artifact 交换，降低对话漂移；",
-        "Harness 记录 Trace、Checkpoint、工具权限和组件快照；",
-        "Provider 可热更新，运行中的任务锁定旧版本，新任务采用新版本；",
-        "失败反馈不能直接改线上策略，候选策略必须通过双分区回放；",
-        "数据与模型解耦，后续可替换平台接口和模型供应商。",
+    story += [P("三项可被商家感知的创新", h2)] + bullets([
+        "原语证据 Grounding：模型提交记录 ID，原文与数值由代码取回；",
+        "可证伪决策处方：每条建议同时携带行动、证据、有效期和推翻条件；",
+        "变化触发局部重算：为不同数据定义新鲜度合同，只更新受影响结论；",
+        "多 Agent、Harness、Provider 热更新与受控演进共同构成可信技术底座。",
     ])
     story += [PageBreak()]
 
@@ -303,9 +301,9 @@ def build_pdf(arch_path, flow_path):
     story += [P("07 业务价值与验证计划", h1)]
     story += [table([
         ["指标", "传统方式", "首轮试点目标"],
-        ["单品类 × 单市场首版研究", "2-3 个工作日", "60-90 秒形成首版四卡"],
+        ["单品类 × 单市场研究", "2-3 个工作日", "数据就绪后 60-90 秒出首版；端到端 2 小时内复核"],
         ["核心建议可追溯率", "依赖人工整理", "100% 关联证据对象"],
-        ["备货前验证", "经常直接投入", "30 份意向测试 + 5 次深访"],
+        ["备货前验证", "经常直接投入", "80% 试点任务完成最小验证"],
         ["结论更新", "人工重做", "阈值触发局部重算"],
         ["错误建议定位", "依赖聊天记录", "关联证据、Agent、组件版本和反馈"],
     ], [57 * mm, 50 * mm, 67 * mm])]
@@ -317,7 +315,7 @@ def build_pdf(arch_path, flow_path):
     ])
     story += [P("评审维度对应", h2), table([
         ["业务价值", "创新性", "可行性", "技术思路"],
-        ["减少错误备货与无效投放", "四卡编译、证据回指、反向条件、受控演进", "真实数据原型、23 项测试、双端 CI", "多 Agent + Harness + Evidence Schema + Event Runtime"],
+        ["减少错误备货与无效投放", "原语 Grounding、可证伪处方、局部重算", "真实数据原型、27 项后端测试、双端 CI", "多 Agent + Harness + Evidence Schema + Event Runtime"],
     ], [41 * mm, 48 * mm, 40 * mm, 45 * mm]), PageBreak()]
 
     story += [P("08 当前成果与边界", h1)]
@@ -327,7 +325,7 @@ def build_pdf(arch_path, flow_path):
         "Amazon Reviews、Olist、UN Comtrade、ECB、GSCPI、LSCI 与 Qwen 真实链路；",
         "证据时间、适用范围、新鲜度门禁、导出分享和市场快照；",
         "Trace、Checkpoint、热更新、组件快照、回滚和策略级受控演进；",
-        "23 项自动化测试与 GitHub Actions。",
+        "27 项后端自动化测试、3 项前端测试与 GitHub Actions。",
     ])
     story += [P("明确边界", h2)] + bullets([
         "当前竞品 listing 的授权实时接口尚未接入；",
@@ -391,7 +389,7 @@ def build_tutorial_pdf():
 
     story = [Spacer(1, 35 * mm), P("先机罗盘", cover_title), P("完整使用演示教程", cover_title), Spacer(1, 8 * mm)]
     story += [P("从启动环境到完成一项可核查的跨境市场进入决策", quote), Spacer(1, 12 * mm)]
-    story += [P("团队：菜菜唠唠", cover_subtitle), P("主案例：宠物自动喂食器 × 巴西", cover_subtitle), P("版本：v1.0 · 2026-08-21", cover_subtitle), Spacer(1, 38 * mm)]
+    story += [P("团队：菜菜唠唠", cover_subtitle), P("主案例：宠物自动喂食器 × 巴西", cover_subtitle), P("版本：v1.1 · 2026-08-24", cover_subtitle), Spacer(1, 38 * mm)]
     story += [P("项目仓库 github.com/royd132/xianjiluopan", cover_subtitle), PageBreak()]
 
     lines = source_path.read_text(encoding="utf-8").splitlines()
@@ -491,7 +489,7 @@ def build_tutorial_pdf():
 
 
 def build_manifest(files):
-    lines = ["# 文件校验清单", "", "生成日期：2026-08-21", "", "| 文件 | SHA-256 | 大小 |", "|---|---|---:|"]
+    lines = ["# 文件校验清单", "", "生成日期：2026-08-24", "", "| 文件 | SHA-256 | 大小 |", "|---|---|---:|"]
     for path in files:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         lines.append(f"| {path.relative_to(PACKAGE).as_posix()} | `{digest}` | {path.stat().st_size:,} bytes |")

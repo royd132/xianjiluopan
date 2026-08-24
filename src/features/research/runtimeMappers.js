@@ -4,7 +4,7 @@ const cardPresentation = {
   product_selection: { id: 'product', type: '选品方向', icon: PackageSearch, tone: 'blue', metric: '机会分' },
   pricing: { id: 'pricing', type: '定价策略', icon: CircleDollarSign, tone: 'amber', metric: '毛利目标' },
   competitive: { id: 'competitive', type: '竞争打法', icon: Target, tone: 'violet', metric: '表达空位' },
-  private_domain: { id: 'private', type: '私域人群', icon: Users, tone: 'green', metric: '复购验证' },
+  private_domain: { id: 'private', type: '最小市场验证', icon: Users, tone: 'green', metric: '验证状态' },
 };
 
 const evidenceTypeLabels = {
