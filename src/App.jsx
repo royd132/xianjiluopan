@@ -40,283 +40,29 @@ import {
   Zap,
 } from 'lucide-react';
 import productImage from './assets/pet-feeder.png';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-const markets = [
-  { code: 'BR', name: '巴西', flag: 'BR' },
-  { code: 'US', name: '美国', flag: 'US' },
-  { code: 'MY', name: '马来西亚', flag: 'MY' },
-  { code: 'MX', name: '墨西哥', flag: 'MX' },
-];
-
-const categoryPatterns = [
-  { key: 'pet_feeder', pattern: /(宠物|喂食|pet|feeder)/i },
-  { key: 'portable_blender', pattern: /(榨汁|果汁|blender|juicer)/i },
-  { key: 'noise_cancelling_headphones', pattern: /(耳机|降噪|headphone|earbud|anc)/i },
-  { key: 'coffee_grinder', pattern: /(咖啡|磨豆|coffee|grinder)/i },
-];
-
-const scopeLabels = {
-  target_market: '目标市场',
-  cross_market: '跨市场产品证据',
-  category_proxy: '目标市场类目代理',
-  macro: '全球宏观',
-  unknown: '适用范围待确认',
-};
-
-const freshnessLabels = {
-  live: '近期',
-  recent: '近期',
-  historical: '历史基线',
-  structural: '结构性基线',
-  unknown: '时间待确认',
-};
-
-const capabilitySignalLabels = {
-  'runtime:fx': '汇率缓存',
-  'runtime:reviews': '评论语料',
-  'runtime:trade': '贸易数据',
-  'runtime:gscpi': '供应链指数',
-  'runtime:qwen': 'Qwen 模型配置',
-  source_backed_price: '有来源的竞品价格',
-  native_market_reviews: '目标市场原生评论',
-  current_competitor_listings: '当前竞品 listing',
-};
-
-function capabilitySignals(items = []) {
-  return items.map((item) => capabilitySignalLabels[item] || item).join('、');
-}
-
-function categoryKeyForQuery(value) {
-  return categoryPatterns.find((item) => item.pattern.test(value))?.key || 'generic';
-}
-
-const agents = [
-  { label: '市场采集', detail: '趋势 / 评论 / 价格 / 贸易信号', icon: Globe2 },
-  { label: '痛点分析', detail: '原语让步结构已聚类', icon: MessageCircleMore },
-  { label: '供应链校验', detail: '贸易 / 运价 / 汇率已校验', icon: Activity },
-  { label: '策略编译', detail: '通过可信度闸门', icon: Sparkles },
-];
-
-const demoEvidence = [
-  {
-    source: 'Google Trends · Brazil',
-    type: '趋势',
-    claim: '“pet feeder”近 90 天搜索热度上升',
-    value: '+64%',
-    verified: false,
-  },
-  {
-    source: 'Amazon Brasil · 217 条葡语评论',
-    type: '评论',
-    claim: '“喜欢，但夜间噪音大”集中出现',
-    value: '38%',
-    verified: false,
-  },
-  {
-    source: 'UN Comtrade · HS 8509',
-    type: '海关',
-    claim: '巴西相关品类进口额同比增长',
-    value: '+41%',
-    verified: false,
-  },
-];
-
-const demoCards = [
-  {
-    id: 'product',
-    type: '选品方向',
-    icon: PackageSearch,
-    tone: 'blue',
-    confidence: 88,
-    title: '做「静音款」宠物自动喂食器，切入巴西市场',
-    summary: '主打夜间不吵醒主人，避开容量与联网功能的正面价格战。',
-    metric: '机会分',
-    metricValue: '86',
-    source: '5 个数据源',
-  },
-  {
-    id: 'pricing',
-    type: '定价策略',
-    icon: CircleDollarSign,
-    tone: 'amber',
-    confidence: 82,
-    title: '锚定 US$49.90，首发价控制在 US$44–52',
-    summary: '以静音电机与易拆洗结构支撑 18% 溢价，目标毛利 31%。',
-    metric: '建议毛利',
-    metricValue: '31%',
-    source: '84 个价格样本',
-  },
-  {
-    id: 'competitive',
-    type: '竞争打法',
-    icon: Target,
-    tone: 'violet',
-    confidence: 85,
-    title: '把“分贝数”变成可验证卖点，而不是泛讲智能',
-    summary: '详情页首屏对比夜间运行分贝，重点攻击 Top 10 的共同表达空位。',
-    metric: '表达空位',
-    metricValue: '72%',
-    source: 'Top 10 竞品',
-  },
-  {
-    id: 'private',
-    type: '私域人群',
-    icon: Users,
-    tone: 'green',
-    confidence: 91,
-    title: '先找“养宠 + 夜班 / 浅眠”人群做种子测试',
-    summary: '承接至 WhatsApp 养宠群，用“让它半夜别吵醒你”完成首轮验证。',
-    metric: '复购信号',
-    metricValue: '强',
-    source: '12 个人群样本',
-    hook: {
-      audience: '养宠 + 夜班 / 浅眠人群',
-      channel: 'WhatsApp 巴西本地养宠群',
-      message: '让它半夜别吵醒你',
-    },
-  },
-];
-
-const cardPresentation = {
-  product_selection: { id: 'product', type: '选品方向', icon: PackageSearch, tone: 'blue', metric: '机会分' },
-  pricing: { id: 'pricing', type: '定价策略', icon: CircleDollarSign, tone: 'amber', metric: '毛利目标' },
-  competitive: { id: 'competitive', type: '竞争打法', icon: Target, tone: 'violet', metric: '表达空位' },
-  private_domain: { id: 'private', type: '私域人群', icon: Users, tone: 'green', metric: '复购验证' },
-};
-
-function mapRuntimeCards(runtimeCards) {
-  return runtimeCards.map((card) => {
-    const presentation = cardPresentation[card.card_type];
-    const data = card.card_specific_data || {};
-    let metricValue = '—';
-    if (card.card_type === 'product_selection') metricValue = String(Math.round((data.opportunity_score ?? data.blue_ocean_index ?? 0) * 100));
-    if (card.card_type === 'pricing') metricValue = data.gross_margin_status === 'planning_hypothesis' ? `目标 ${data.gross_margin_pct || 31}%` : `${data.gross_margin_pct || 31}%`;
-    if (card.card_type === 'competitive') metricValue = data.listing_audit_required ? '待审计' : `${data.expression_gap_pct ?? 0}%`;
-    if (card.card_type === 'private_domain') metricValue = data.repurchase_signal_status === 'not_measured' || data.repurchase_signal_strength === 'unverified' ? '待验证' : data.repurchase_signal_strength === 'strong' ? '强' : '中';
-    return {
-      ...presentation,
-      confidence: Math.round(card.confidence_score * 100),
-      title: card.action_title,
-      summary: card.action_detail,
-      metricValue,
-      source: `${card.evidences.length} 条证据`,
-      hook: {
-        audience: card.private_domain_hook.seed_audience,
-        channel: card.private_domain_hook.channel,
-        message: card.private_domain_hook.hook_message,
-      },
-      failureConditions: card.failure_conditions,
-      runtimeCard: card,
-    };
-  });
-}
-
-const evidenceTypeLabels = { trend: '趋势', review: '评论', customs: '海关', freight: '运价', shipping: '航运', fx: '汇率', price: '商品价格', social: '社媒', model_trace: '模型轨迹' };
-const reportModeLabels = { mock: '场景化 Mock', hybrid: '公开数据 + 明示回退', real: '真实数据 + Qwen', 'mock-offline': '离线固定样例' };
-const painPositions = [
-  { x: 18, y: 22, size: 58, color: '#2563eb' },
-  { x: 48, y: 42, size: 43, color: '#059669' },
-  { x: 72, y: 51, size: 38, color: '#d97706' },
-  { x: 84, y: 67, size: 32, color: '#7c3aed' },
-  { x: 37, y: 73, size: 26, color: '#64748b' },
-];
-
-function mapRuntimeEvidence(runtimeCards) {
-  const seen = new Set();
-  return runtimeCards.flatMap((card) => card.evidences || []).filter((item) => {
-    if (seen.has(item.evidence_id)) return false;
-    seen.add(item.evidence_id);
-    return true;
-  }).map((item) => ({
-    source: item.source_name,
-    type: evidenceTypeLabels[item.source_type] || item.source_type,
-    claim: item.claim,
-    value: item.raw_value,
-    verified: item.verified,
-    url: item.url,
-    observedAt: item.observed_at,
-    collectedAt: item.collected_at,
-    observationPeriod: item.observation_period,
-    freshnessClass: item.freshness_class || 'unknown',
-    marketScope: item.market_scope || 'unknown',
-    sourceMarket: item.source_market,
-    evidenceKind: item.evidence_kind,
-    modelId: item.model_id,
-  }));
-}
-
-function mapRuntimePainPoints(items) {
-  return items.map((item, index) => ({
-    id: item.pain_type,
-    label: item.label,
-    value: Math.round(item.opportunity_index * 100),
-    count: item.mentions,
-    ...painPositions[index % painPositions.length],
-  }));
-}
-
-function mapRuntimeReviews(items, marketName) {
-  return Object.fromEntries(items.map((item) => [item.pain_type, {
-    original: item.sample_original,
-    translation: item.sample_translation,
-    meta: `${item.languages.join(' / ')} · ${item.market_scope === 'target_market' ? item.source_market || marketName : item.market_scope === 'category_proxy' ? `${item.source_market || marketName} 类目代理` : `跨市场 · ${item.source_market || 'global'}`} · ${item.extracted_by === 'llm' ? 'Qwen 源记录回指' : item.extracted_by === 'keyword' ? '规则源记录抽取' : 'Mock 样本'}`,
-  }]));
-}
-
-function mapRuntimeSupplySignals(items) {
-  const bars = [[24, 32, 29, 41, 46, 58, 66], [32, 27, 38, 34, 44, 49, 53], [45, 43, 47, 42, 44, 46, 45]];
-  return items.map((item, index) => ({
-    name: item.label,
-    value: item.signal_type === 'fx' ? String(item.current_value) : `${item.change_pct >= 0 ? '+' : ''}${item.change_pct}%`,
-    note: item.period,
-    state: item.status,
-    bars: bars[index % bars.length],
-  }));
-}
-
-const demoPainPoints = [
-  { id: 'noise', label: '夜间噪音', value: 88, count: 82, x: 18, y: 22, size: 58, color: '#2563eb' },
-  { id: 'clean', label: '清洗困难', value: 69, count: 47, x: 48, y: 42, size: 43, color: '#059669' },
-  { id: 'jam', label: '容易卡粮', value: 61, count: 38, x: 72, y: 51, size: 38, color: '#d97706' },
-  { id: 'portion', label: '份量不准', value: 51, count: 29, x: 84, y: 67, size: 32, color: '#7c3aed' },
-  { id: 'wifi', label: '联网不稳', value: 35, count: 18, x: 37, y: 73, size: 26, color: '#64748b' },
-];
-
-const demoReviews = {
-  noise: {
-    original: 'Adoro o alimentador, mas o motor faz muito barulho durante a madrugada.',
-    translation: '我很喜欢这个喂食器，但电机在半夜运行时声音很大。',
-    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
-  },
-  clean: {
-    original: 'Ótimo produto, porém desmontar para limpar dá muito trabalho.',
-    translation: '产品很好，不过拆开清洗非常麻烦。',
-    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
-  },
-  jam: {
-    original: 'Funciona bem, mas a ração trava quando os grãos são maiores.',
-    translation: '运行不错，但颗粒稍大时就会卡粮。',
-    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
-  },
-  portion: {
-    original: 'Gosto do aplicativo, mas a porção nunca parece igual.',
-    translation: '我喜欢它的应用，但每次出粮量看起来都不一样。',
-    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
-  },
-  wifi: {
-    original: 'É bonito, porém perde a conexão com frequência.',
-    translation: '外观很好看，但经常断开连接。',
-    meta: '葡萄牙语 · 巴西 · Mock 原语样本',
-  },
-};
-
-const demoSupplySignals = [
-  { name: '巴西进口需求', value: '+41%', note: '同比', state: 'positive', bars: [24, 32, 29, 41, 46, 58, 66] },
-  { name: '南美海运 FBX', value: '+6.2%', note: '近 30 天', state: 'watch', bars: [32, 27, 38, 34, 44, 49, 53] },
-  { name: 'USD / BRL', value: '5.43', note: '稳定区间', state: 'stable', bars: [45, 43, 47, 42, 44, 46, 45] },
-];
+import { foresightClient } from './api/foresightClient';
+import {
+  mapRuntimeCards,
+  mapRuntimeEvidence,
+  mapRuntimePainPoints,
+  mapRuntimeReviews,
+  mapRuntimeSupplySignals,
+  reportModeLabels,
+} from './features/research/runtimeMappers';
+import { useResearchEvents } from './features/research/useResearchEvents';
+import {
+  agents,
+  capabilitySignals,
+  categoryKeyForQuery,
+  demoCards,
+  demoEvidence,
+  demoPainPoints,
+  demoReviews,
+  demoSupplySignals,
+  freshnessLabels,
+  markets,
+  scopeLabels,
+} from './features/research/researchConfig';
 
 function MiniBars({ values, state }) {
   return (
@@ -375,8 +121,8 @@ function App() {
   const [evolution, setEvolution] = useState(null);
   const [evolutionLoading, setEvolutionLoading] = useState(false);
   const resultsRef = useRef(null);
-  const eventSourceRef = useRef(null);
   const sharedTaskLoadedRef = useRef(false);
+  const { connect: connectResearchEvents } = useResearchEvents();
 
   const selectedMarket = useMemo(() => markets.find((item) => item.code === market), [market]);
   const selectedReportMarket = useMemo(() => markets.find((item) => item.code === reportMarket), [reportMarket]);
@@ -409,9 +155,7 @@ function App() {
 
   const loadEvolution = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/evolution`);
-      if (!response.ok) throw new Error('evolution unavailable');
-      setEvolution(await response.json());
+      setEvolution(await foresightClient.getEvolution());
     } catch {
       setEvolution(null);
     }
@@ -441,11 +185,7 @@ function App() {
   }, [running, runtimeState]);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/v1/health`)
-      .then((response) => {
-        if (!response.ok) throw new Error('runtime unavailable');
-        return response.json();
-      })
+    foresightClient.getHealth()
       .then((payload) => {
         const modes = payload.supported_modes || ['mock'];
         const capabilities = payload.scenario_capabilities || [];
@@ -461,7 +201,6 @@ function App() {
         setRuntimeState('offline');
         setRuntimeMessage('离线演示模式');
       });
-    return () => eventSourceRef.current?.close();
   }, []);
 
   useEffect(() => {
@@ -494,11 +233,7 @@ function App() {
     if (runtimeState !== 'connected') return;
     setMonitoringLoading(true);
     try {
-      const params = new URLSearchParams({ category, market: targetMarket });
-      const response = await fetch(`${API_BASE_URL}/api/v1/monitoring?${params.toString()}`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || 'monitoring unavailable');
-      setMonitoring(payload);
+      setMonitoring(await foresightClient.getMonitoring(category, targetMarket));
     } catch {
       setToast('监控快照暂不可用');
     } finally {
@@ -507,8 +242,7 @@ function App() {
   };
 
   const loadRuntimeResult = async (taskId) => {
-    const response = await fetch(`${API_BASE_URL}/api/v1/research/${taskId}`);
-    const payload = await response.json();
+    const payload = await foresightClient.getResearch(taskId);
     if (payload.result?.cards) {
       setDecisionCards(mapRuntimeCards(payload.result.cards));
       setReportEvidence(mapRuntimeEvidence(payload.result.cards));
@@ -548,38 +282,29 @@ function App() {
   }, [hasReport]);
 
   const connectRuntimeEvents = (taskId) => {
-    eventSourceRef.current?.close();
-    const source = new EventSource(`${API_BASE_URL}/api/v1/research/${taskId}/events`);
-    eventSourceRef.current = source;
     let completedAgents = 0;
-    source.addEventListener('agent.started', (event) => {
-      const payload = JSON.parse(event.data);
-      setRuntimeMessage(payload.message);
-    });
-    source.addEventListener('agent.completed', (event) => {
-      const payload = JSON.parse(event.data);
-      completedAgents += 1;
-      setAgentStep(Math.min(Math.ceil(completedAgents / 1.5), agents.length - 1));
-      setRuntimeMessage(payload.message);
-    });
-    source.addEventListener('gate.passed', () => {
-      setAgentStep(agents.length - 1);
-      setRuntimeMessage('安全评测闸门已通过');
-    });
-    source.addEventListener('task.completed', async () => {
-      source.close();
-      await loadRuntimeResult(taskId);
-    });
-    source.addEventListener('task.failed', () => {
-      source.close();
-      if (researchMode === 'mock') {
-        setToast('Mock Runtime 任务失败，已切换离线演示');
-        runLocalFallback();
-        return;
-      }
-      setRunning(false);
-      setRuntimeMessage(`${researchMode === 'real' ? '真实' : '混合'}任务失败，未静默降级`);
-      setToast('数据或模型未满足当前模式合同，请查看后端任务事件');
+    connectResearchEvents(taskId, {
+      onAgentStarted: (payload) => setRuntimeMessage(payload?.message || 'Agent 已启动'),
+      onAgentCompleted: (payload) => {
+        completedAgents += 1;
+        setAgentStep(Math.min(Math.ceil(completedAgents / 1.5), agents.length - 1));
+        setRuntimeMessage(payload?.message || 'Agent 已完成');
+      },
+      onGatePassed: () => {
+        setAgentStep(agents.length - 1);
+        setRuntimeMessage('安全评测闸门已通过');
+      },
+      onTaskCompleted: () => loadRuntimeResult(taskId),
+      onTaskFailed: () => {
+        if (researchMode === 'mock') {
+          setToast('Mock Runtime 任务失败，已切换离线演示');
+          runLocalFallback();
+          return;
+        }
+        setRunning(false);
+        setRuntimeMessage(`${researchMode === 'real' ? '真实' : '混合'}任务失败，未静默降级`);
+        setToast('数据或模型未满足当前模式合同，请查看后端任务事件');
+      },
     });
   };
 
@@ -596,13 +321,12 @@ function App() {
     setAgentStep(0);
     setRunning(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/research`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: query, market, mode: researchMode, languages: ['pt', 'en', 'es'] }),
+      const payload = await foresightClient.createResearch({
+        category: query,
+        market,
+        mode: researchMode,
+        languages: ['pt', 'en', 'es'],
       });
-      if (!response.ok) throw new Error('runtime unavailable');
-      const payload = await response.json();
       setRuntimeState('connected');
       setRuntimeMessage(`任务 ${payload.task_id.slice(0, 8)} 已进入协作黑板`);
       connectRuntimeEvents(payload.task_id);
@@ -658,17 +382,12 @@ function App() {
     const runtimeCardId = selectedCard?.runtimeCard?.card_id || decisionCards[0]?.runtimeCard?.card_id;
     if (runtimeCardId && runtimeState === 'connected') {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/cards/${runtimeCardId}/review`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            status,
-            reviewer: 'demo-user',
-            reason: status === 'rejected' ? '证据数量与原语覆盖不足，需要提高发布门槛' : null,
-            failure_type: status === 'rejected' ? 'weak_evidence' : null,
-          }),
+        await foresightClient.reviewCard(runtimeCardId, {
+          status,
+          reviewer: 'demo-user',
+          reason: status === 'rejected' ? '证据数量与原语覆盖不足，需要提高发布门槛' : null,
+          failure_type: status === 'rejected' ? 'weak_evidence' : null,
         });
-        if (!response.ok) throw new Error('review failed');
         await loadEvolution();
       } catch {
         setToast('反馈已保存在页面，Runtime 写入失败');
@@ -681,9 +400,7 @@ function App() {
   const createEvolutionCandidate = async () => {
     setEvolutionLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/evolution/candidates`, { method: 'POST' });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || 'candidate failed');
+      const payload = await foresightClient.createEvolutionCandidate();
       await loadEvolution();
       setToast(`${payload.candidate_version} 已通过 Validation / Holdout 门禁`);
     } catch (error) {
@@ -696,8 +413,7 @@ function App() {
   const activateEvolutionPolicy = async (version) => {
     setEvolutionLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/evolution/policies/${version}/activate`, { method: 'POST' });
-      if (!response.ok) throw new Error('activate failed');
+      await foresightClient.activateEvolutionPolicy(version);
       await loadEvolution();
       setToast(`${version} 已激活，后续任务将使用新证据门槛`);
     } catch {
@@ -710,9 +426,7 @@ function App() {
   const rollbackEvolutionPolicy = async () => {
     setEvolutionLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/evolution/rollback`, { method: 'POST' });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || 'rollback failed');
+      const payload = await foresightClient.rollbackEvolutionPolicy();
       await loadEvolution();
       setToast(`已回滚至 ${payload.version}`);
     } catch (error) {

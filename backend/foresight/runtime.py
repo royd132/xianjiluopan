@@ -19,7 +19,8 @@ from .data import MockDataProvider
 from .events import CollaborationBlackboard, EventType, RuntimeEvent
 from .evolution import EvolutionEngine, FeedbackFlywheel
 from .extensions import PluginManifest, ScopeContext
-from .harness import AgentHarness, ToolDefinition, stable_hash
+from .harness import ToolDefinition, stable_hash
+from .harness_runtime import AgentHarness
 from .models import (
     DecisionCard,
     EvidenceItem,
@@ -86,6 +87,11 @@ class ForesightRuntime:
 
     def scenario_capabilities(self) -> list[dict[str, Any]]:
         return self.real_provider.scenario_capabilities()
+
+    def has_event_stream(self, task_id: str) -> bool:
+        """Return whether this process owns a live event stream for the task."""
+
+        return task_id in self.boards
 
     def monitoring_snapshot(self, category: str, market: str) -> dict[str, Any]:
         if "hybrid" not in self.supported_modes:

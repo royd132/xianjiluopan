@@ -324,10 +324,11 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $env:TEMP=$tmp
 $env:TMP=$tmp
 python -m pytest
+npm.cmd run test:frontend
 npm.cmd run build
 ```
 
-测试覆盖离线多 Agent 任务、四卡 Schema、事件序列、Checkpoint、反馈记忆、作用域遮蔽、单调权限 Guard、插件失败清理、Provider 热更新、跨重启 generation 恢复、组件快照和 API 健康检查。
+测试覆盖离线多 Agent 任务、四卡 Schema、事件序列、Checkpoint、反馈记忆、作用域遮蔽、单调权限 Guard、插件失败清理、Provider 热更新、跨重启 generation 恢复、组件快照、API 健康检查、公开信号 Connector 合同与前端 Runtime 映射。
 
 仓库还包含：
 
@@ -344,17 +345,24 @@ npm.cmd run build
 .
 ├── backend/foresight/
 │   ├── agents.py       # 六类 Agent
-│   ├── api.py          # FastAPI + SSE
+│   ├── api.py          # FastAPI App Factory
+│   ├── api_routes.py   # REST + SSE 路由
+│   ├── api_dependencies.py # Runtime 注入与管理权限
 │   ├── data.py         # Mock/真实数据 Provider 扩展点
 │   ├── events.py       # Blackboard 与事件协议
 │   ├── evolution.py    # 反馈、策略候选、评测、激活与回滚
 │   ├── extensions.py   # 作用域、插件生命周期、Guard 与组件快照
-│   ├── harness.py      # Run Ledger/节点恢复/工具注册/Memory
+│   ├── harness.py      # Trace/Memory/Run Ledger/Checkpoint 持久化
+│   ├── harness_runtime.py # 节点恢复、工具调用与组件快照执行器
 │   ├── models.py       # Pydantic 领域模型
 │   ├── policy.py       # 线上运行与离线回放共用的生产门禁
+│   ├── providers/      # 汇率、贸易、GSCPI、LSCI 等源级 Connector
 │   └── runtime.py      # 多 Agent 编排器
-├── src/                # React 洞察工作台
+├── src/
+│   ├── api/            # 前端 API Client
+│   └── features/       # 研究配置、映射与 SSE Hook
 ├── tests/              # 后端自动化测试
+├── frontend-tests/     # Node 前端领域映射测试
 ├── docs/               # 架构、协议、比赛与演示文档
 ├── deliverables/       # 初赛 PDF、使用教程、图示、截图与提交 ZIP
 ├── scripts/            # 本地运行脚本

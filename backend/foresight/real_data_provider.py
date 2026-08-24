@@ -16,6 +16,14 @@ from .data import (
 )
 from .model_adapters import ModelAdapterError, QwenReviewExtractor, ReviewRecord
 from .models import EvidenceItem, PainPoint, ResearchRequest, SupplySignal
+from .providers import (
+    ConnectorDataError,
+    FxCsvConnector,
+    GscpiCsvConnector,
+    LsciCsvConnector,
+    PublicSignalConnectors,
+    TradeCsvConnector,
+)
 
 
 class ProviderUnavailableError(RuntimeError):
@@ -110,6 +118,7 @@ class RealDataProvider:
         datasets_dir: Path | str = "datasets",
         model_adapter: QwenReviewExtractor | None = None,
         mock_provider: MockDataProvider | None = None,
+        signal_connectors: PublicSignalConnectors | None = None,
     ) -> None:
         self.datasets_dir = Path(datasets_dir).expanduser().resolve()
         self.fx_dir = self.datasets_dir / "fx"
@@ -119,6 +128,12 @@ class RealDataProvider:
         self.lsci_path = self.datasets_dir / "shipping" / "lsci.csv"
         self.olist_dir = self.datasets_dir / "olist"
         self.amazon_metadata_dir = self.datasets_dir / "amazon_metadata"
+        self.signal_connectors = signal_connectors or PublicSignalConnectors(
+            fx=FxCsvConnector(self.fx_dir, FX_FILES),
+            trade=TradeCsvConnector(self.trade_path),
+            gscpi=GscpiCsvConnector(self.gscpi_path),
+            lsci=LsciCsvConnector(self.lsci_path, WORLD_BANK_MARKETS),
+        )
         self.model_adapter = model_adapter or QwenReviewExtractor()
         self.mock_provider = mock_provider or MockDataProvider()
         self._review_cache: dict[str, list[dict[str, Any]]] = {}
@@ -126,14 +141,14 @@ class RealDataProvider:
         self._strict_product_ids: set[str] | None = None
 
     def data_status(self) -> dict[str, Any]:
-        fx_files = [self.fx_dir / filename for filename in FX_FILES.values()]
         review_files = [self.reviews_dir / filename for filename in set(CATEGORY_REVIEW_FILES.values())]
+        signal_status = self.signal_connectors.status()
         checks = {
-            "fx": all(path.is_file() for path in fx_files),
+            "fx": signal_status["fx"],
             "reviews": all(path.is_file() for path in review_files),
-            "trade": self.trade_path.is_file(),
-            "gscpi": self.gscpi_path.is_file(),
-            "lsci": self.lsci_path.is_file(),
+            "trade": signal_status["trade"],
+            "gscpi": signal_status["gscpi"],
+            "lsci": signal_status["lsci"],
             "olist": all(
                 (self.olist_dir / filename).is_file()
                 for filename in (
@@ -625,74 +640,29 @@ class RealDataProvider:
         return sorted(points, key=lambda point: point.mentions, reverse=True)[:5]
 
     def _fx_signal(self, market: str) -> dict[str, Any]:
-        path = self.fx_dir / FX_FILES.get(market, FX_FILES["US"])
-        with path.open(newline="", encoding="utf-8-sig") as handle:
-            rows = list(csv.DictReader(handle))
-        values = [(row["date"], float(next(value for key, value in row.items() if key.startswith("rate_")))) for row in rows]
-        latest_date, latest_value = values[-1]
-        previous_date, previous_value = values[max(0, len(values) - 23)]
-        labels = {"BR": ("USD/BRL", "BRL"), "MX": ("USD/MXN", "MXN"), "MY": ("USD/MYR", "MYR"), "US": ("EUR/USD", "USD")}
-        label, unit = labels.get(market, (market, ""))
-        return {
-            "label": label,
-            "unit": unit,
-            "latest_date": latest_date,
-            "previous_date": previous_date,
-            "latest_value": round(latest_value, 4),
-            "change_pct": round((latest_value - previous_value) / previous_value * 100, 2),
-        }
+        try:
+            return dict(self.signal_connectors.fx.snapshot(market))
+        except ConnectorDataError as exc:
+            raise ProviderUnavailableError(str(exc)) from exc
 
     def _trade_signal(self, market: str, hs_code: str) -> dict[str, Any]:
-        with self.trade_path.open(newline="", encoding="utf-8-sig") as handle:
-            rows = [
-                row
-                for row in csv.DictReader(handle)
-                if row["market"].upper() == market and row["hs_code"] == hs_code and row["flow"].lower() == "import"
-            ]
-        rows.sort(key=lambda row: int(row["year"]))
-        if len(rows) < 2:
-            raise ProviderUnavailableError(f"UN Comtrade cache lacks two years for {market} HS{hs_code}")
-        previous, latest = rows[-2], rows[-1]
-        previous_value = float(previous["primary_value_usd"])
-        latest_value = float(latest["primary_value_usd"])
-        return {
-            "latest_year": int(latest["year"]),
-            "latest_value": latest_value,
-            "previous_value": previous_value,
-            "change_pct": round((latest_value - previous_value) / previous_value * 100, 1),
-        }
+        try:
+            return dict(self.signal_connectors.trade.snapshot(market, hs_code))
+        except ConnectorDataError as exc:
+            raise ProviderUnavailableError(str(exc)) from exc
 
     def _gscpi_signal(self) -> dict[str, Any]:
-        with self.gscpi_path.open(newline="", encoding="utf-8-sig") as handle:
-            rows = list(csv.DictReader(handle))
-        if len(rows) < 2:
-            raise ProviderUnavailableError("GSCPI cache lacks two observations")
-        previous, latest = rows[-2], rows[-1]
-        previous_value = float(previous["gscpi"])
-        latest_value = float(latest["gscpi"])
-        return {
-            "latest_date": latest["date"],
-            "latest_value": round(latest_value, 3),
-            "change_pct": round((latest_value - previous_value) * 100, 1),
-        }
+        try:
+            return dict(self.signal_connectors.gscpi.snapshot())
+        except ConnectorDataError as exc:
+            raise ProviderUnavailableError(str(exc)) from exc
 
     def _lsci_signal(self, market: str) -> dict[str, Any] | None:
-        target = WORLD_BANK_MARKETS.get(market)
-        if not target or not self.lsci_path.is_file():
-            return None
-        with self.lsci_path.open(newline="", encoding="utf-8-sig") as handle:
-            rows = [row for row in csv.DictReader(handle) if row["market"] == target]
-        rows.sort(key=lambda row: int(row["year"]))
-        if len(rows) < 2:
-            return None
-        previous, latest = rows[-2], rows[-1]
-        previous_value = float(previous["value"])
-        latest_value = float(latest["value"])
-        return {
-            "latest_year": int(latest["year"]),
-            "latest_value": round(latest_value, 3),
-            "change_pct": round((latest_value - previous_value) / previous_value * 100, 1),
-        }
+        try:
+            snapshot = self.signal_connectors.lsci.snapshot(market)
+            return dict(snapshot) if snapshot else None
+        except ConnectorDataError as exc:
+            raise ProviderUnavailableError(str(exc)) from exc
 
     def _olist_market_data(self, category_key: str) -> dict[str, Any] | None:
         if category_key in self._olist_cache:

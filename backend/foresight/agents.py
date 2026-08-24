@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
 from .events import CollaborationBlackboard, EventType, RuntimeEvent
-from .harness import AgentHarness
+from .harness_runtime import AgentHarness
 from .models import (
     CardType,
     ConfidenceLevel,
