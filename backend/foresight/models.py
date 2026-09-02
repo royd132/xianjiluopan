@@ -27,6 +27,8 @@ class ResearchRequest(BaseModel):
     workspace_id: str = Field(default="default", min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
     mode: Literal["mock", "hybrid", "real"] = "mock"
     languages: list[str] = Field(default_factory=lambda: ["pt", "en", "es"])
+    planned_investment: float | None = Field(default=None, ge=0, description="Planned first-order investment amount (CNY)")
+    investment_stage: str | None = Field(default=None, max_length=60, description="e.g. 首批备货, 打样, 广告测试")
 
 
 class EvidenceItem(BaseModel):
@@ -145,6 +147,7 @@ class ResearchResult(BaseModel):
     started_at: datetime
     completed_at: datetime
     trace_id: str
+    contract: DecisionContract | None = None
 
 
 class ReviewRequest(BaseModel):
@@ -167,3 +170,75 @@ class FeedbackRecord(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     reason: str | None = None
     failure_type: Literal["weak_evidence", "stale_evidence", "overconfident", "bad_action"] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Decision Contract — first-order investment decision artifact
+# ---------------------------------------------------------------------------
+
+
+class DecisionVerdict(str, Enum):
+    GO = "GO"
+    VALIDATE = "VALIDATE"
+    STOP = "STOP"
+
+
+class EvidenceCheckpoint(BaseModel):
+    """One dimension of evidence maturity."""
+
+    question: str
+    status: Literal["pass", "partial", "gap"]
+    basis: str = ""
+
+
+class EvidenceCoverage(BaseModel):
+    """Decision evidence maturity — how many required questions are answered."""
+
+    checkpoints: list[EvidenceCheckpoint]
+
+    @property
+    def maturity(self) -> str:
+        passed = sum(1 for c in self.checkpoints if c.status == "pass")
+        return f"{passed} / {len(self.checkpoints)}"
+
+    @property
+    def gaps(self) -> list[str]:
+        return [c.question for c in self.checkpoints if c.status == "gap"]
+
+    @property
+    def ready(self) -> bool:
+        return all(c.status != "gap" for c in self.checkpoints)
+
+
+class DecisionContract(BaseModel):
+    """First-order investment decision contract.
+
+    Replaces the 'report' paradigm with a concrete Go/Validate/Stop decision
+    tied to a specific capital commitment.
+    """
+
+    contract_id: str = Field(default_factory=lambda: str(uuid4()))
+    task_id: str
+    verdict: DecisionVerdict
+    planned_investment: float | None = None
+    investment_stage: str | None = None
+    allowed_investment: float | None = None
+    core_basis: list[str] = Field(default_factory=list)
+    biggest_unknown: str = ""
+    experiment_design: str | None = None
+    experiment_budget: float | None = None
+    promotion_criteria: str = ""
+    stop_conditions: list[str] = Field(default_factory=list)
+    validity_days: int = 14
+    recalculation_triggers: list[str] = Field(default_factory=list)
+    evidence_coverage: EvidenceCoverage
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ValidationResultRequest(BaseModel):
+    """User-submitted validation results for re-evaluation."""
+
+    actual_spend: float = Field(ge=0)
+    metrics: dict[str, Any] = Field(default_factory=dict, description="e.g. click_count, intent_rate, cpc, sample_feedback_count")
+    outcome: Literal["positive", "negative", "inconclusive"] = "inconclusive"
+    notes: str | None = None

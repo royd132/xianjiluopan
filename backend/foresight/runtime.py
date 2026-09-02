@@ -24,6 +24,8 @@ from .harness_runtime import AgentHarness
 from .skills import SkillBank, SkillStore, load_seed_skills
 from .models import (
     DecisionCard,
+    DecisionContract,
+    DecisionVerdict,
     EvidenceItem,
     FeedbackRecord,
     PainPoint,
@@ -31,6 +33,7 @@ from .models import (
     ResearchResult,
     ReviewRequest,
     SupplySignal,
+    ValidationResultRequest,
 )
 from .real_data_provider import ProviderUnavailableError, RealDataProvider
 
@@ -460,6 +463,9 @@ class ForesightRuntime:
                         )
 
             cards = board.read("decision_cards")
+            contract = board.read("decision_contract")
+            if contract:
+                contract.task_id = task_id
             result = ResearchResult(
                 task_id=task_id,
                 request=request,
@@ -476,6 +482,7 @@ class ForesightRuntime:
                     "safety-evaluator",
                 ],
                 mode=request.mode,
+                contract=contract,
                 started_at=started_at,
                 completed_at=datetime.now(timezone.utc),
                 trace_id=trace_id,
@@ -613,6 +620,69 @@ class ForesightRuntime:
             self.harness.trace.write(run["trace_id"], task_id, "feedback.recorded", payload)
             self.harness.runs.record_event(task_id, run["trace_id"], "feedback.recorded", payload, "human-review")
         return feedback
+
+    def submit_validation_result(
+        self, task_id: str, result: ValidationResultRequest
+    ) -> DecisionContract:
+        """Accept actual validation data and re-evaluate the decision contract."""
+        stored = self.get_result(task_id)
+        if not stored or not stored.contract:
+            raise KeyError(f"No decision contract available for task {task_id}")
+
+        contract = stored.contract
+        if contract.verdict != DecisionVerdict.VALIDATE:
+            raise ValueError(
+                f"Validation results can only be submitted for VALIDATE contracts "
+                f"(current: {contract.verdict.value})"
+            )
+
+        # Re-evaluate based on actual outcome
+        metrics = result.metrics
+        if result.outcome == "positive":
+            new_verdict = DecisionVerdict.GO
+            contract.allowed_investment = contract.planned_investment
+        elif result.outcome == "negative":
+            new_verdict = DecisionVerdict.STOP
+            contract.allowed_investment = 0
+        else:
+            new_verdict = DecisionVerdict.VALIDATE
+
+        contract.verdict = new_verdict
+        contract.core_basis.append(
+            f"验证结果：实际花费 ¥{result.actual_spend:.0f}，"
+            f"结果={result.outcome}"
+        )
+        if metrics:
+            parts = []
+            if "intent_rate" in metrics:
+                parts.append(f"意向率 {metrics['intent_rate']:.0%}")
+            if "cpc" in metrics:
+                parts.append(f"CPC ¥{metrics['cpc']:.2f}")
+            if "sample_count" in metrics:
+                parts.append(f"样本量 {metrics['sample_count']}")
+            if parts:
+                contract.core_basis.append("验证指标：" + "，".join(parts))
+
+        # Update the "validation done" checkpoint
+        for cp in contract.evidence_coverage.checkpoints:
+            if cp.question == "最小验证是否完成？":
+                cp.status = "pass" if new_verdict == DecisionVerdict.GO else "gap"
+                cp.basis = f"验证结果：{result.outcome}，花费 ¥{result.actual_spend:.0f}"
+                break
+
+        # Persist
+        self.harness.memory.put("contracts", task_id, contract.model_dump(mode="json"))
+        stored.contract = contract
+        self.harness.memory.put("research_results", task_id, stored.model_dump(mode="json"))
+
+        # Trace
+        run = self.harness.runs.get_run(task_id)
+        if run:
+            payload = {"verdict": new_verdict.value, "actual_spend": result.actual_spend}
+            self.harness.trace.write(run["trace_id"], task_id, "validation.submitted", payload)
+            self.harness.runs.record_event(task_id, run["trace_id"], "validation.submitted", payload, "validation")
+
+        return contract
 
     def load_checkpoint(self, task_id: str) -> dict[str, Any] | None:
         return self.harness.checkpoints.load(task_id)

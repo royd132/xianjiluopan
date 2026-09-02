@@ -4,6 +4,7 @@ import asyncio
 import statistics
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from typing import Any
 
 from .events import CollaborationBlackboard, EventType, RuntimeEvent
 from .harness_runtime import AgentHarness
@@ -11,6 +12,10 @@ from .models import (
     CardType,
     ConfidenceLevel,
     DecisionCard,
+    DecisionContract,
+    DecisionVerdict,
+    EvidenceCheckpoint,
+    EvidenceCoverage,
     FailureCondition,
     PrivateDomainHook,
     ResearchRequest,
@@ -212,6 +217,111 @@ class DecisionCompilerAgent(BaseAgent):
             ),
         ]
         await board.publish_artifact("decision_cards_draft", cards, self.name)
+
+        # --- Decision Contract ---
+        supply_signals = board.read("supply_signals", [])
+        contract = self._build_contract(request, cards, evidences, pains, metrics, supply_signals, scenario)
+        await board.publish_artifact("decision_contract", contract, self.name)
+
+    @staticmethod
+    def _build_contract(
+        request: ResearchRequest,
+        cards: list[DecisionCard],
+        evidences: list,
+        pains: list,
+        metrics: dict[str, Any],
+        supply_signals: list,
+        scenario: dict[str, Any],
+    ) -> DecisionContract:
+        # Evidence coverage: 5 mandatory questions
+        non_english = sum(1 for e in evidences if e.language != "en")
+        verified = sum(1 for e in evidences if e.verified)
+        checkpoints = [
+            EvidenceCheckpoint(
+                question="需求是否真实？",
+                status="pass" if len(pains) >= 2 else "partial" if pains else "gap",
+                basis=f"{len(pains)} 个痛点已从多语种评论中提取",
+            ),
+            EvidenceCheckpoint(
+                question="消费者痛点是否明确？",
+                status="pass" if pains and pains[0].opportunity_index >= 0.5 else "gap",
+                basis=f"首要痛点：{pains[0].label if pains else '未识别'}",
+            ),
+            EvidenceCheckpoint(
+                question="目标价格是否成立？",
+                status="pass" if metrics.get("anchor_price", 0) > 0 else "gap",
+                basis=f"锚点价格：{metrics.get('anchor_price', 'N/A')}",
+            ),
+            EvidenceCheckpoint(
+                question="供应链成本是否可控？",
+                status="pass" if supply_signals and not any(s.status == "alert" for s in supply_signals) else "partial" if supply_signals else "gap",
+                basis=f"{len(supply_signals)} 个供应链信号已采集",
+            ),
+            EvidenceCheckpoint(
+                question="最小验证是否完成？",
+                status="gap",
+                basis="需要实际用户验证数据",
+            ),
+        ]
+        coverage = EvidenceCoverage(checkpoints=checkpoints)
+
+        # Verdict logic
+        avg_confidence = sum(c.confidence_score for c in cards) / max(len(cards), 1)
+        gap_count = len(coverage.gaps)
+        if gap_count >= 3:
+            verdict = DecisionVerdict.STOP
+        elif gap_count >= 1 or avg_confidence < 0.75:
+            verdict = DecisionVerdict.VALIDATE
+        else:
+            verdict = DecisionVerdict.GO
+
+        # Investment guidance
+        planned = request.planned_investment
+        if verdict == DecisionVerdict.VALIDATE and planned:
+            # Recommend ≤ 10% of planned for validation
+            allowed = round(planned * 0.10, 0)
+            experiment_budget = min(allowed, 2000)
+        elif verdict == DecisionVerdict.STOP:
+            allowed = 0
+            experiment_budget = None
+        else:
+            allowed = planned
+            experiment_budget = None
+
+        # Stop conditions from all cards
+        stop_conditions = []
+        for card in cards:
+            for fc in card.failure_conditions:
+                stop_conditions.append(f"{fc.condition}（{fc.metric_to_watch} {fc.threshold}）")
+
+        # Experiment design for VALIDATE
+        experiment = None
+        if verdict == DecisionVerdict.VALIDATE:
+            primary_pain = pains[0].label if pains else "核心需求"
+            experiment = (
+                f"招募 30 名目标用户，针对「{primary_pain}」进行价格对比测试，"
+                f"记录购买意向率，达到阈值后再进入供应商谈判。"
+            )
+
+        return DecisionContract(
+            task_id="",  # filled by runtime
+            verdict=verdict,
+            planned_investment=planned,
+            investment_stage=request.investment_stage,
+            allowed_investment=allowed,
+            core_basis=[f"{len(evidences)} 条多源证据", f"平均置信度 {avg_confidence:.0%}"],
+            biggest_unknown=coverage.gaps[0] if coverage.gaps else "验证结果",
+            experiment_design=experiment,
+            experiment_budget=experiment_budget,
+            promotion_criteria="有效购买意向 ≥ 阈值，且核心痛点被用户主动提及",
+            stop_conditions=stop_conditions,
+            recalculation_triggers=[
+                "汇率波动 > 5%",
+                "运费指数变化 > 15%",
+                "竞品价格下破当前锚点 10%",
+            ],
+            evidence_coverage=coverage,
+        )
 
 
 class SafetyEvaluationAgent(BaseAgent):
