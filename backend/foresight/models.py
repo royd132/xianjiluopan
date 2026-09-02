@@ -210,6 +210,15 @@ class EvidenceCoverage(BaseModel):
         return all(c.status != "gap" for c in self.checkpoints)
 
 
+class ValidationCriteria(BaseModel):
+    """Structured promotion gates for VALIDATE → GO transition."""
+
+    min_sample_count: int = 30
+    min_intent_rate: float = 0.12
+    max_cpc: float | None = None
+    min_pain_confirmation_rate: float | None = None
+
+
 class DecisionContract(BaseModel):
     """First-order investment decision contract.
 
@@ -227,12 +236,13 @@ class DecisionContract(BaseModel):
     biggest_unknown: str = ""
     experiment_design: str | None = None
     experiment_budget: float | None = None
-    promotion_criteria: str = ""
+    promotion_criteria: ValidationCriteria = Field(default_factory=ValidationCriteria)
     stop_conditions: list[str] = Field(default_factory=list)
     validity_days: int = 14
     recalculation_triggers: list[str] = Field(default_factory=list)
     evidence_coverage: EvidenceCoverage
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    human_override: DecisionVerdict | None = None
 
 
 class ValidationResultRequest(BaseModel):

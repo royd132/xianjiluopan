@@ -19,6 +19,7 @@ from .models import (
     FailureCondition,
     PrivateDomainHook,
     ResearchRequest,
+    ValidationCriteria,
 )
 from .policy import DEFAULT_POLICY, evaluate_decision_cards
 
@@ -253,7 +254,7 @@ class DecisionCompilerAgent(BaseAgent):
                 basis=f"锚点价格：{metrics.get('anchor_price', 'N/A')}",
             ),
             EvidenceCheckpoint(
-                question="供应链成本是否可控？",
+                question="供应链外部风险是否可控？",
                 status="pass" if supply_signals and not any(s.status == "alert" for s in supply_signals) else "partial" if supply_signals else "gap",
                 basis=f"{len(supply_signals)} 个供应链信号已采集",
             ),
@@ -276,9 +277,10 @@ class DecisionCompilerAgent(BaseAgent):
             verdict = DecisionVerdict.GO
 
         # Investment guidance
+        # ponytail: conservative pilot strategy — ≤10% of planned, capped at ¥2000.
+        # Not AI-optimized; explicitly a configurable safety ceiling.
         planned = request.planned_investment
         if verdict == DecisionVerdict.VALIDATE and planned:
-            # Recommend ≤ 10% of planned for validation
             allowed = round(planned * 0.10, 0)
             experiment_budget = min(allowed, 2000)
         elif verdict == DecisionVerdict.STOP:
@@ -313,7 +315,11 @@ class DecisionCompilerAgent(BaseAgent):
             biggest_unknown=coverage.gaps[0] if coverage.gaps else "验证结果",
             experiment_design=experiment,
             experiment_budget=experiment_budget,
-            promotion_criteria="有效购买意向 ≥ 阈值，且核心痛点被用户主动提及",
+            promotion_criteria=ValidationCriteria(
+                min_sample_count=30,
+                min_intent_rate=0.12,
+                min_pain_confirmation_rate=0.30,
+            ),
             stop_conditions=stop_conditions,
             recalculation_triggers=[
                 "汇率波动 > 5%",

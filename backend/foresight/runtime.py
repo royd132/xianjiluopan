@@ -624,7 +624,12 @@ class ForesightRuntime:
     def submit_validation_result(
         self, task_id: str, result: ValidationResultRequest
     ) -> DecisionContract:
-        """Accept actual validation data and re-evaluate the decision contract."""
+        """Accept actual validation data and re-evaluate the decision contract.
+
+        Verdict is determined by structured metrics against promotion_criteria,
+        not by the user-supplied outcome string. human_override is recorded
+        separately when the user explicitly disagrees with the system verdict.
+        """
         stored = self.get_result(task_id)
         if not stored or not stored.contract:
             raise KeyError(f"No decision contract available for task {task_id}")
@@ -636,38 +641,81 @@ class ForesightRuntime:
                 f"(current: {contract.verdict.value})"
             )
 
-        # Re-evaluate based on actual outcome
         metrics = result.metrics
-        if result.outcome == "positive":
-            new_verdict = DecisionVerdict.GO
-            contract.allowed_investment = contract.planned_investment
-        elif result.outcome == "negative":
-            new_verdict = DecisionVerdict.STOP
-            contract.allowed_investment = 0
+        criteria = contract.promotion_criteria
+
+        # --- Metrics-driven verdict ---
+        gates_passed: list[str] = []
+        gates_failed: list[str] = []
+
+        sample = int(metrics.get("sample_count", 0))
+        if sample >= criteria.min_sample_count:
+            gates_passed.append(f"样本量 {sample} ≥ {criteria.min_sample_count}")
         else:
-            new_verdict = DecisionVerdict.VALIDATE
+            gates_failed.append(f"样本量 {sample} < {criteria.min_sample_count}")
+
+        intent = float(metrics.get("intent_rate", 0))
+        if intent >= criteria.min_intent_rate:
+            gates_passed.append(f"意向率 {intent:.0%} ≥ {criteria.min_intent_rate:.0%}")
+        else:
+            gates_failed.append(f"意向率 {intent:.0%} < {criteria.min_intent_rate:.0%}")
+
+        if criteria.max_cpc is not None:
+            cpc = float(metrics.get("cpc", 0))
+            if cpc <= criteria.max_cpc:
+                gates_passed.append(f"CPC ¥{cpc:.2f} ≤ ¥{criteria.max_cpc:.2f}")
+            else:
+                gates_failed.append(f"CPC ¥{cpc:.2f} > ¥{criteria.max_cpc:.2f}")
+
+        if criteria.min_pain_confirmation_rate is not None:
+            pain_rate = float(metrics.get("pain_confirmation_rate", 0))
+            if pain_rate >= criteria.min_pain_confirmation_rate:
+                gates_passed.append(f"痛点确认率 {pain_rate:.0%} ≥ {criteria.min_pain_confirmation_rate:.0%}")
+            else:
+                gates_failed.append(f"痛点确认率 {pain_rate:.0%} < {criteria.min_pain_confirmation_rate:.0%}")
+
+        if not gates_failed and gates_passed:
+            system_verdict = DecisionVerdict.GO
+        elif gates_failed:
+            system_verdict = DecisionVerdict.STOP
+        else:
+            system_verdict = DecisionVerdict.VALIDATE
+
+        # --- Human override ---
+        human_override = None
+        if result.outcome == "positive" and system_verdict != DecisionVerdict.GO:
+            human_override = DecisionVerdict.GO
+        elif result.outcome == "negative" and system_verdict != DecisionVerdict.STOP:
+            human_override = DecisionVerdict.STOP
+
+        new_verdict = human_override if human_override else system_verdict
+
+        # --- Apply verdict ---
+        if new_verdict == DecisionVerdict.GO:
+            contract.allowed_investment = contract.planned_investment
+        elif new_verdict == DecisionVerdict.STOP:
+            contract.allowed_investment = 0
 
         contract.verdict = new_verdict
+        contract.human_override = human_override
         contract.core_basis.append(
-            f"验证结果：实际花费 ¥{result.actual_spend:.0f}，"
-            f"结果={result.outcome}"
+            f"验证结果：实际花费 ¥{result.actual_spend:.0f}"
         )
-        if metrics:
-            parts = []
-            if "intent_rate" in metrics:
-                parts.append(f"意向率 {metrics['intent_rate']:.0%}")
-            if "cpc" in metrics:
-                parts.append(f"CPC ¥{metrics['cpc']:.2f}")
-            if "sample_count" in metrics:
-                parts.append(f"样本量 {metrics['sample_count']}")
-            if parts:
-                contract.core_basis.append("验证指标：" + "，".join(parts))
+        if gates_passed:
+            contract.core_basis.append("晋级门通过：" + "；".join(gates_passed))
+        if gates_failed:
+            contract.core_basis.append("晋级门未通过：" + "；".join(gates_failed))
+        if human_override:
+            contract.core_basis.append(
+                f"人工覆盖：系统判定={system_verdict.value}，"
+                f"人工覆盖={human_override.value}"
+            )
 
         # Update the "validation done" checkpoint
         for cp in contract.evidence_coverage.checkpoints:
             if cp.question == "最小验证是否完成？":
                 cp.status = "pass" if new_verdict == DecisionVerdict.GO else "gap"
-                cp.basis = f"验证结果：{result.outcome}，花费 ¥{result.actual_spend:.0f}"
+                cp.basis = f"验证结果：{new_verdict.value}，花费 ¥{result.actual_spend:.0f}"
                 break
 
         # Persist

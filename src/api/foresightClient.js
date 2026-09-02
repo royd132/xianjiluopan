@@ -91,6 +91,14 @@ export const foresightClient = {
     return requestJson(`/api/v1/skills/${encodeURIComponent(name)}/rollback`, { method: 'POST' });
   },
 
+  submitValidationResult(taskId, result) {
+    return requestJson(`/api/v1/contracts/${encodeURIComponent(taskId)}/validate-result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(result),
+    });
+  },
+
   openResearchEvents(taskId) {
     return new EventSource(
       `${API_BASE_URL}/api/v1/research/${encodeURIComponent(taskId)}/events`,

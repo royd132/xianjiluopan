@@ -1,8 +1,12 @@
-# 🧭 先机罗盘：首单前的证据决策系统
+# 🧭 先机罗盘：跨境新品的 AI 首单投资决策台
 
-> **Foresight Compass**：别人告诉卖家"市场怎么样"，先机罗盘回答"现在该 **Go**、先 **Validate**，还是 **Stop**；依据是什么；什么情况会推翻这个结论"。
+> **Foresight Compass**：在卖家第一次不可逆投入前，判断证据是否足够；不够就设计最低成本验证，够了才 Go，并明确什么情况下必须 Stop。
 >
-> 面向缺少海外研究团队的中小跨境卖家，在付样品费、开模和首批备货之前，用 6 个 AI Agent 把分散在多平台、多语言、多数据源的市场信号编译成四张可追溯、可过期、可推翻的决策卡。
+> **我们不预测爆款，我们减少"还没验证就把钱变成库存"的错误。**
+
+竞品交付市场研究报告，先机罗盘交付一份**决策契约（Decision Contract）**——可以拿去开首单评审会的 Go / Validate / Stop 决策，附带证据覆盖率、最大未知项、最低成本实验设计和明确 Stop 条件。
+
+面向缺少海外研究团队的中小跨境卖家。系统不会在首轮就建议直接 Go——未经真实用户验证，先机罗盘永远不会建议直接投入。
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](backend/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](src/)
@@ -16,17 +20,18 @@
 
 1. [这个项目是什么](#-这个项目是什么)
 2. [商家为什么会用](#-商家为什么会用)
-3. [它解决什么问题](#-它解决什么问题)
-4. [系统架构](#-系统架构)
-5. [六大核心 Agent](#-六大核心-agent)
-6. [Harness、热插拔与自进化](#-harness热插拔与自进化)
-7. [快速开始](#-快速开始)
-8. [API 与离线 CLI](#-api-与离线-cli)
-9. [关键代码](#-关键代码)
-10. [项目结构](#-项目结构)
-11. [测试与工程质量](#-测试与工程质量)
-12. [文档导航](#-文档导航)
-13. [路线图与边界](#-路线图与边界)
+3. [决策契约](#-决策契约)
+4. [它解决什么问题](#-它解决什么问题)
+5. [系统架构](#-系统架构)
+6. [六大核心 Agent](#-六大核心-agent)
+7. [Harness 与自进化](#-harness-与自进化)
+8. [快速开始](#-快速开始)
+9. [API 与离线 CLI](#-api-与离线-cli)
+10. [关键代码](#-关键代码)
+11. [项目结构](#-项目结构)
+12. [测试与工程质量](#-测试与工程质量)
+13. [文档导航](#-文档导航)
+14. [路线图与边界](#-路线图与边界)
 
 ---
 
@@ -58,7 +63,73 @@
 | 做详情页和投广告前 | 应该攻击哪个竞品空位 | 竞争卡：首屏证据、对比方法与防守动作 |
 | 大批备货前 | 有没有一群真实用户愿意表达购买意向 | 最小市场验证卡：人群、渠道、样本量、验证问题和停止条件 |
 
-产品不替卖家自动下采购单，而是在不可逆投入之前，把“我感觉能卖”改造成“哪些证据支持、先验证什么、什么情况下停止”。首轮试点将重点验证调研时长、决策卡采纳率、证据可追溯率和备货前验证完成率，不把预期指标包装成已实现商业结果。
+产品不替卖家自动下采购单，而是在不可逆投入之前，把”我感觉能卖”改造成”哪些证据支持、先验证什么、什么情况下停止”。
+
+## 📋 决策契约（Decision Contract）
+
+竞品交付市场研究报告，先机罗盘交付一份**决策契约**——可以拿去开首单评审会的 Go / Validate / Stop 决策。
+
+卖家输入：
+
+```
+产品：自动宠物喂食器
+市场：巴西
+决策阶段：首批备货
+计划投入：¥30,000
+```
+
+系统输出：
+
+| 字段 | 示例 |
+|---|---|
+| 决策 | **VALIDATE** |
+| 计划投入 | ¥30,000 |
+| 当前允许投入 | ≤ ¥2,000 |
+| 证据成熟度 | 4 / 5 |
+| 最大未知项 | 真实用户购买意向尚未验证 |
+| 下一步实验 | 30 人价格 × 痛点对比测试 |
+| 实验预算 | ¥2,000 |
+| 晋级条件 | 样本量 ≥30，意向率 ≥12%，痛点确认率 ≥30% |
+| Stop 条件 | CPC / 意向率 / 成本超过阈值 |
+| 有效期 | 14 天 |
+| 必须重算事件 | 汇率 / 运费 / 竞品价格变化超过阈值 |
+
+### 产品原则
+
+**未经真实用户验证，先机罗盘永远不会建议直接 Go。** 这是刻意设计的硬闸门——AI 无法凭市场数据越过。
+
+```
+计划投入 → 多源 Evidence → 6 Agents → 四张分析卡
+                                      ↓
+                              Evidence Coverage (5 问)
+                                      ↓
+                              Decision Contract
+                              ┌────┼────────┐
+                             GO  VALIDATE   STOP
+                                  ↓
+                           最低成本实验
+                                  ↓
+                           真实验证结果
+                           (metrics-driven)
+                                  ↓
+                           重新决策 → GO / STOP
+```
+
+### 验证结果回填
+
+当用户完成最小验证后，提交结构化指标（样本量、意向率、CPC、痛点确认率），系统按 `ValidationCriteria` 自动判定 Go / Stop。人工可以覆盖系统判定，但 `system_verdict` 和 `human_override` 会分开记录。
+
+### 证据覆盖率
+
+系统不输出”机会评分 87/100”。而是检查 5 个必答问题：
+
+1. 需求是否真实？
+2. 消费者痛点是否明确？
+3. 目标价格是否成立？
+4. 供应链外部风险是否可控？
+5. 最小验证是否完成？
+
+前 4 个可以通过市场数据回答，第 5 个**必须**有真实用户验证数据。
 
 ## 🎯 它解决什么问题
 
@@ -80,8 +151,8 @@
 - 事件驱动 `CollaborationBlackboard`；
 - 6 个职责明确的 Agent；
 - Harness 工具治理、Trace、Memory 与 Checkpoint；
-- DSH 式作用域扩展平面、可逆插件生命周期与 Provider 热更新；
-- 任务级组件快照，运行中任务锁定 Provider、工具和策略版本；
+- 可配置 Provider 注册与热更新；
+- 任务级组件快照；
 - 四类决策卡 Schema 和安全评测闸门；
 - 多语言隐性痛点分析；
 - 供应链信号与反向条件；
@@ -183,9 +254,9 @@ DecisionCard (每条证据可追溯到具体用户的原话)
 
 每次调用记录 prompt 指纹、模型版本和 adapter 版本。Real 模式下，如果 Qwen 调用失败或返回不合规结构，任务直接拒绝，不会用规则回退冒充模型结果。Hybrid 模式允许规则回退，但回退范围必须在输出中明确披露。
 
-## 🧠 Harness、热插拔与自进化
+## 🧠 Harness 与自进化
 
-先机罗盘采用 **可恢复 Agent 运行内核 + DSH 式扩展平面**。节点恢复、Run Ledger 和演进门禁保持稳定；Provider、Tool、Evaluator、Policy Pack 与 Agent Adapter 位于可替换层。
+先机罗盘采用 **可恢复 Agent 运行内核 + 扁平工具注册表**。
 
 | 模块 | 当前实现 | 作用 |
 |---|---|---|
@@ -193,14 +264,13 @@ DecisionCard (每条证据可追溯到具体用户的原话)
 | Node Runtime | 状态机 + 重试/超时/取消 | 按 collect / analyze / compile / validate 节点可靠执行 |
 | Memory Store | SQLite | 保存研究结果、复核卡片、分类反馈和失败案例 |
 | Checkpoint | JSON 快照 + 节点状态 | 服务重启后恢复 Blackboard，并跳过已完成节点 |
-| Scoped Tool Registry | global / workspace / market / task 分层遮蔽 | 同名能力按最近作用域解析 |
-| Effect Stack | 注册副作用逆序撤销 | 插件安装失败或回滚时自动清理 |
-| Capability Guard | 单调权限拒绝 | 局部插件不能恢复已禁止工具 |
-| Component Snapshot | 插件、工具和策略版本 SHA-256 | 热更新只影响新任务，旧任务可复现和恢复 |
+| Tool Registry | 扁平注册 + 全局 Guard | 工具注册与权限控制 |
+| Capability Guard | Allowlist 权限 | 工具访问控制 |
+| Component Snapshot | 插件、工具和策略版本 SHA-256 | 任务级组件快照 |
 | Evaluation Gate | Pydantic + 分层规则 | Mock 走结构门禁；真实模式增加已核实证据门禁 |
 | Policy Evolution | 外置合成 DecisionCard 双分区回放 | 候选经过共享门禁后才能人工激活 |
 
-Provider 更新采用 `staging -> health check -> activate`，旧 generation 保留给已启动任务。服务重启时 Runtime 按组件快照重建所需 generation，当前活动 Provider 版本也会持久化。自进化飞轮完成反馈收集、失败案例沉淀、候选策略生成、外置合成决策卡 Validation/Holdout 回放、人工激活与版本回滚；商家审核案例尚在试点阶段积累。
+Provider 可通过 API 热更新，当前活动版本持久化到 Memory。自进化飞轮完成反馈收集、失败案例沉淀、候选策略生成、外置合成决策卡 Validation/Holdout 回放、人工激活与版本回滚。
 
 ## 🚀 快速开始
 
@@ -296,9 +366,9 @@ $env:FORESIGHT_DEMO_READ_ONLY="true"
 | POST | `/api/v1/skills/{id}/promote` | 人工激活已通过门禁的 Skill |
 | POST | `/api/v1/skills/{name}/rollback` | 回滚到父版本 Skill |
 | GET | `/api/v1/runtime/extensions` | 查看活动和退役的插件 generation |
-| POST | `/api/v1/runtime/providers/mock/reload` | 热更新内置 Mock Provider，新任务生效 |
-| POST | `/api/v1/runtime/providers/mock/rollback` | 回滚内置 Provider generation |
-| GET | `/api/v1/research/{id}/component-snapshot` | 查看任务固定的插件、工具和策略版本 |
+| POST | `/api/v1/runtime/providers/mock/reload` | 热更新内置 Mock Provider |
+| GET | `/api/v1/research/{id}/component-snapshot` | 查看任务的插件、工具和策略版本 |
+| POST | `/api/v1/contracts/{id}/validate-result` | 提交验证结果，系统按指标重新判定 Go/Stop |
 
 ### 离线 CLI
 
@@ -360,7 +430,7 @@ npm.cmd run test:frontend
 npm.cmd run build
 ```
 
-测试覆盖离线多 Agent 任务、四卡 Schema、事件序列、Checkpoint、反馈记忆、作用域遮蔽、单调权限 Guard、插件失败清理、Provider 热更新、跨重启 generation 恢复、组件快照、API 健康检查、公开信号 Connector 合同与前端 Runtime 映射。
+测试覆盖离线多 Agent 任务、四卡 Schema、事件序列、Checkpoint、反馈记忆、权限 Guard、插件失败清理、Provider 热更新、组件快照、Decision Contract Go/Validate/Stop 判定、验证结果回填、metrics-driven 晋升门禁、人工覆盖记录、API 健康检查、公开信号 Connector 合同与前端 Runtime 映射。
 
 仓库还包含：
 
@@ -383,7 +453,7 @@ npm.cmd run build
 │   ├── data.py         # Mock/真实数据 Provider 扩展点
 │   ├── events.py       # Blackboard 与事件协议
 │   ├── evolution.py    # 反馈、策略候选、评测、激活与回滚
-│   ├── extensions.py   # 作用域、插件生命周期、Guard 与组件快照
+│   ├── extensions.py   # 工具注册、Guard、插件管理与组件快照
 │   ├── harness.py      # Trace/Memory/Run Ledger/Checkpoint 持久化
 │   ├── harness_runtime.py # 节点恢复、工具调用与组件快照执行器
 │   ├── models.py       # Pydantic 领域模型
@@ -464,8 +534,8 @@ Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的�
 - [x] Trace / Memory / Checkpoint / Feedback Flywheel
 - [x] 可恢复节点 Runtime、Run Ledger 与工具注册表
 - [x] 策略候选、Validation/Holdout 门禁、激活与回滚
-- [x] DSH 式 Effect Stack、作用域 Registry 与单调权限 Guard
-- [x] Provider 热更新、任务级组件快照与跨重启 generation 恢复
+- [x] Tool Registry、Capability Guard 与组件快照
+- [x] Provider 热更新与任务级组件快照
 - [x] 场景化多品类 × 多市场 Mock 冷启动
 - [x] 外置合成 DecisionCard 共享门禁回放与数据指纹
 - [x] Docker 与 CI
@@ -473,6 +543,7 @@ Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的�
 - [ ] 定时市场快照、变化检测与阈值告警
 - [x] 可替换 Qwen Model Adapter、结构化输出与源记录 Grounding
 - [x] Skill Bank 最小闭环：候选抽取、BM25 检索、Validation/Holdout 评测、人工激活与回滚
+- [x] Decision Contract：首单投资决策 Go/Validate/Stop、证据覆盖率、验证结果回填与 metrics-driven 判定
 - [ ] Chroma/Qdrant 双塔检索
 - [ ] 生产任务队列和分布式事件总线
 - [ ] 基于合规反馈样本的 Layer 3 模型演进
@@ -495,6 +566,6 @@ Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的�
 
 <div align="center">
 
-**让每一步出海决策都有据可依。**
+**不预测爆款，只减少"还没验证就把钱变成库存"的错误。**
 
 </div>

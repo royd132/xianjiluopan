@@ -101,6 +101,11 @@ function App() {
   const [currentTaskId, setCurrentTaskId] = useState(null);
   const [monitoring, setMonitoring] = useState(null);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
+  const [decisionContract, setDecisionContract] = useState(null);
+  const [plannedInvestment, setPlannedInvestment] = useState('30000');
+  const [investmentStage, setInvestmentStage] = useState('首批备货');
+  const [validationMetrics, setValidationMetrics] = useState({ sample_count: '', intent_rate: '', cpc: '', pain_confirmation_rate: '' });
+  const [validationSubmitting, setValidationSubmitting] = useState(false);
   const [runtimeState, setRuntimeState] = useState('checking');
   const [runtimeMessage, setRuntimeMessage] = useState('正在检测多 Agent Runtime');
   const [evolution, setEvolution] = useState(null);
@@ -238,6 +243,7 @@ function App() {
       setReportMarket(payload.result.request.market);
       setReportGeneratedAt(payload.result.completed_at);
       setReportMode(payload.result.mode);
+      setDecisionContract(payload.result.contract || null);
       setHasReport(true);
       setCurrentTaskId(taskId);
       setSelectedPain(payload.result.pain_points[0]?.pain_type || 'noise');
@@ -311,6 +317,8 @@ function App() {
         market,
         mode: researchMode,
         languages: ['pt', 'en', 'es'],
+        planned_investment: plannedInvestment ? Number(plannedInvestment) : null,
+        investment_stage: investmentStage || null,
       });
       setRuntimeState('connected');
       setRuntimeMessage(`任务 ${payload.task_id.slice(0, 8)} 已进入协作黑板`);
@@ -476,9 +484,9 @@ function App() {
           <section className="query-workbench" id="research-entry">
             <div className="section-heading-row">
               <div>
-                <span className="eyebrow">全球市场机会扫描</span>
-                <h1>这个品类，值得进入这个市场吗？</h1>
-                <p>把分散的趋势、评论、竞品与供应链信号，编译成备货前可以验证的行动指令。</p>
+                <span className="eyebrow">首单投资决策台</span>
+                <h1>这笔钱，现在能不能投？</h1>
+                <p>在第一次不可逆投入前，检查证据是否足够；不够就设计最低成本验证，够了才 Go。</p>
               </div>
               <div className="mode-switch" aria-label="洞察模式">
                 <button className={mode === 'intuition' ? 'active' : ''} onClick={() => setMode('intuition')}>直觉</button>
@@ -501,6 +509,8 @@ function App() {
               <div className="quick-tags"><span>快速开始</span>{['宠物喂食器', '便携榨汁机', '降噪耳机'].map((tag) => <button key={tag} onClick={() => setQuery(tag)}>{tag}</button>)}</div>
               <div className="market-picker"><span>目标市场</span>{markets.map((item) => <button key={item.code} className={market === item.code ? 'active' : ''} onClick={() => setMarket(item.code)}><b>{item.code}</b>{item.name}</button>)}</div>
               <div className="market-picker data-mode-picker"><span>数据模式</span>{['real', 'hybrid', 'mock'].map((item) => <button key={item} disabled={!modeAvailable(item)} className={researchMode === item ? 'active' : ''} onClick={() => setResearchMode(item)}>{reportModeLabels[item]}</button>)}</div>
+              <div className="market-picker investment-picker"><span>决策阶段</span>{['打样', '首批小单', '首批备货', '广告测试'].map((stage) => <button key={stage} className={investmentStage === stage ? 'active' : ''} onClick={() => setInvestmentStage(stage)}>{stage}</button>)}</div>
+              <div className="market-picker investment-picker"><span>计划投入（¥）</span><input type="number" value={plannedInvestment} onChange={(e) => setPlannedInvestment(e.target.value)} placeholder="30000" style={{ width: 120, padding: '6px 10px', borderRadius: 6, border: '1px solid #d0d5dd', fontSize: 14 }} /></div>
             </div>
             <div className={`capability-note ${currentCapability?.real_available ? 'ready' : 'limited'}`}><Database size={14} /><span>{capabilityText}</span></div>
           </section>
@@ -536,7 +546,7 @@ function App() {
               {/(宠物|喂食|pet|feeder)/i.test(reportCategory)
                 ? <img src={productImage} alt="宠物自动喂食器演示概念" />
                 : <span className="report-product-placeholder"><PackageSearch size={26} /></span>}
-              <div><span className="eyebrow">机会报告 · {selectedReportMarket?.code} · {reportModeLabels[reportMode] || reportMode}</span><h2>{reportCategory}</h2><p>{selectedReportMarket?.name}市场 · 本次任务完成于 {formatReportTime(reportGeneratedAt)}</p></div>
+              <div><span className="eyebrow">决策契约 · {selectedReportMarket?.code} · {reportModeLabels[reportMode] || reportMode}</span><h2>{reportCategory}</h2><p>{selectedReportMarket?.name}市场 · 本次任务完成于 {formatReportTime(reportGeneratedAt)}</p></div>
             </div>
             <div className="report-actions">
               <button className="secondary-button" onClick={() => window.print()}><Printer size={16} />打印/PDF</button>
@@ -552,11 +562,89 @@ function App() {
             <button className="secondary-button" onClick={() => loadMonitoring(reportCategory, reportMarket)} disabled={monitoringLoading}>{monitoringLoading ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}刷新快照</button>
           </section>
 
+          {decisionContract && (
+            <section className="decision-contract-panel" style={{ background: decisionContract.verdict === 'GO' ? '#ecfdf5' : decisionContract.verdict === 'STOP' ? '#fef2f2' : '#fffbeb', border: '2px solid', borderColor: decisionContract.verdict === 'GO' ? '#10b981' : decisionContract.verdict === 'STOP' ? '#ef4444' : '#f59e0b', borderRadius: 12, padding: '24px 28px', marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                <span style={{ fontSize: 32, fontWeight: 800, color: decisionContract.verdict === 'GO' ? '#059669' : decisionContract.verdict === 'STOP' ? '#dc2626' : '#d97706', letterSpacing: 2 }}>{decisionContract.verdict}</span>
+                <div>
+                  <strong style={{ fontSize: 16 }}>
+                    {decisionContract.verdict === 'GO' ? '证据充分，可以投入' : decisionContract.verdict === 'STOP' ? '证据不足，建议停止' : '当前不建议直接投入'}
+                  </strong>
+                  {decisionContract.planned_investment && (
+                    <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 14 }}>
+                      计划投入 ¥{decisionContract.planned_investment.toLocaleString()}
+                      {decisionContract.allowed_investment != null && decisionContract.verdict !== 'GO' && (
+                        <> → 当前建议上限 <strong style={{ color: '#d97706' }}>¥{decisionContract.allowed_investment.toLocaleString()}</strong></>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, fontSize: 14 }}>
+                <div><span style={{ color: '#6b7280' }}>证据成熟度</span><br /><strong>{decisionContract.evidence_coverage?.maturity || '—'}</strong>
+                  <div style={{ background: '#e5e7eb', borderRadius: 4, height: 6, marginTop: 4 }}>
+                    <div style={{ background: decisionContract.verdict === 'GO' ? '#10b981' : '#f59e0b', borderRadius: 4, height: 6, width: `${((decisionContract.evidence_coverage?.checkpoints || []).filter(c => c.status === 'pass').length / Math.max((decisionContract.evidence_coverage?.checkpoints || []).length, 1)) * 100}%` }} />
+                  </div>
+                </div>
+                {decisionContract.biggest_unknown && <div><span style={{ color: '#6b7280' }}>最大未知项</span><br /><strong>{decisionContract.biggest_unknown}</strong></div>}
+                {decisionContract.experiment_design && <div><span style={{ color: '#6b7280' }}>下一步实验</span><br /><strong style={{ fontSize: 13 }}>{decisionContract.experiment_design.slice(0, 60)}…</strong></div>}
+                {decisionContract.experiment_budget != null && <div><span style={{ color: '#6b7280' }}>实验预算</span><br /><strong>¥{decisionContract.experiment_budget.toLocaleString()}</strong></div>}
+              </div>
+              {decisionContract.stop_conditions?.length > 0 && (
+                <details style={{ marginTop: 12, fontSize: 13 }}>
+                  <summary style={{ cursor: 'pointer', color: '#6b7280' }}>Stop 条件 ({decisionContract.stop_conditions.length})</summary>
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 20, color: '#374151' }}>
+                    {decisionContract.stop_conditions.map((s, i) => <li key={i}>{s}</li>)}
+                  </ul>
+                </details>
+              )}
+              {decisionContract.human_override && (
+                <div style={{ marginTop: 12, padding: '8px 12px', background: '#fef3c7', borderRadius: 6, fontSize: 13, color: '#92400e' }}>
+                  ⚠ 人工覆盖：系统判定={decisionContract.verdict === 'GO' ? 'STOP' : 'GO'}，已由人工覆盖为 {decisionContract.verdict}
+                </div>
+              )}
+            </section>
+          )}
+
+          {decisionContract?.verdict === 'VALIDATE' && currentTaskId && (
+            <section className="validation-form" style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: 20, marginBottom: 24 }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>提交验证结果</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                <label style={{ fontSize: 13 }}>样本量<input type="number" value={validationMetrics.sample_count} onChange={(e) => setValidationMetrics({ ...validationMetrics, sample_count: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
+                <label style={{ fontSize: 13 }}>意向率 (0-1)<input type="number" step="0.01" value={validationMetrics.intent_rate} onChange={(e) => setValidationMetrics({ ...validationMetrics, intent_rate: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
+                <label style={{ fontSize: 13 }}>CPC (¥)<input type="number" step="0.1" value={validationMetrics.cpc} onChange={(e) => setValidationMetrics({ ...validationMetrics, cpc: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
+                <label style={{ fontSize: 13 }}>痛点确认率 (0-1)<input type="number" step="0.01" value={validationMetrics.pain_confirmation_rate} onChange={(e) => setValidationMetrics({ ...validationMetrics, pain_confirmation_rate: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
+              </div>
+              <button className="primary-button" disabled={validationSubmitting} onClick={async () => {
+                setValidationSubmitting(true);
+                try {
+                  const metrics = {};
+                  if (validationMetrics.sample_count) metrics.sample_count = Number(validationMetrics.sample_count);
+                  if (validationMetrics.intent_rate) metrics.intent_rate = Number(validationMetrics.intent_rate);
+                  if (validationMetrics.cpc) metrics.cpc = Number(validationMetrics.cpc);
+                  if (validationMetrics.pain_confirmation_rate) metrics.pain_confirmation_rate = Number(validationMetrics.pain_confirmation_rate);
+                  const contract = await foresightClient.submitValidationResult(currentTaskId, {
+                    actual_spend: 1800,
+                    metrics,
+                    outcome: 'inconclusive',
+                  });
+                  setDecisionContract(contract);
+                  setToast(`验证结果已提交 → ${contract.verdict}`);
+                } catch (error) {
+                  setToast(error.message || '提交失败');
+                } finally {
+                  setValidationSubmitting(false);
+                }
+              }} style={{ marginTop: 12 }}>
+                {validationSubmitting ? '提交中…' : '提交验证结果'}
+              </button>
+            </section>
+          )}
+
           <section className="signal-strip">
-            <div><span className="metric-icon blue"><TrendingUp size={18} /></span><p>验证优先级<small>启发式指标，未用商业结果校准</small></p><strong>{opportunityScore}<em>/100</em></strong></div>
             <div><span className="metric-icon green"><MessageCircleMore size={18} /></span><p>首要隐性痛点<small>{leadPain.label}</small></p><strong>{leadPain.count}<em>条</em></strong></div>
             <div><span className="metric-icon amber"><Boxes size={18} /></span><p>需求信号<small>{demandSignal.name}</small></p><strong>{demandSignal.value}<em>{demandSignal.note}</em></strong></div>
-            <div><span className="metric-icon violet"><Clock3 size={18} /></span><p>机会窗口<small>建议复核周期</small></p><strong>14<em>天</em></strong></div>
+            <div><span className="metric-icon violet"><Clock3 size={18} /></span><p>决策有效期<small>建议复核周期</small></p><strong>14<em>天</em></strong></div>
           </section>
 
           {mode === 'intuition' ? (
@@ -567,6 +655,7 @@ function App() {
             </section>
           ) : (
             <>
+              <div style={{ marginBottom: 12 }}><span className="eyebrow">为什么系统这么判断？</span><h2 style={{ fontSize: 18, margin: '4px 0' }}>支撑投资决策的证据层</h2></div>
               <DecisionCardGrid cards={decisionCards} onSelectCard={setSelectedCard} />
             </>
           )}

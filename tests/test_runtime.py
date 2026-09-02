@@ -7,7 +7,7 @@ import pytest
 
 from foresight.events import CollaborationBlackboard
 from foresight.data import MockDataProvider
-from foresight.models import CardType, ResearchRequest, ReviewRequest
+from foresight.models import CardType, DecisionVerdict, ResearchRequest, ReviewRequest, ValidationResultRequest
 from foresight.policy import DEFAULT_POLICY, evaluate_decision_cards
 from foresight.real_data_provider import RealDataProvider
 from foresight.runtime import ForesightRuntime, UnsupportedResearchModeError
@@ -479,5 +479,104 @@ def test_run_events_record_full_node_lifecycle(tmp_path):
         assert kinds.count("node.started") >= 4
         assert kinds.count("node.completed") >= 4
         assert any(e["kind"] == "checkpoint" for e in events)
+
+    asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Decision Contract tests
+# ---------------------------------------------------------------------------
+
+
+def test_contract_first_run_always_validate_never_go(tmp_path):
+    """Without real user validation, the system never gives GO on first run."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+        contract = result.contract
+        assert contract is not None
+        assert contract.verdict != DecisionVerdict.GO
+        # "最小验证是否完成？" must always be gap on first run
+        validation_cp = next(
+            cp for cp in contract.evidence_coverage.checkpoints
+            if "验证" in cp.question
+        )
+        assert validation_cp.status == "gap"
+
+    asyncio.run(scenario())
+
+
+def test_contract_metrics_pass_promotes_to_go(tmp_path):
+    """When validation metrics exceed all promotion gates, verdict becomes GO."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+        assert result.contract.verdict == DecisionVerdict.VALIDATE
+
+        contract = runtime.submit_validation_result(
+            result.task_id,
+            ValidationResultRequest(
+                actual_spend=1800,
+                metrics={"sample_count": 35, "intent_rate": 0.18, "pain_confirmation_rate": 0.40},
+                outcome="positive",
+            ),
+        )
+        assert contract.verdict == DecisionVerdict.GO
+        assert contract.allowed_investment == 30000
+        assert contract.human_override is None
+
+    asyncio.run(scenario())
+
+
+def test_contract_metrics_fail_stops(tmp_path):
+    """When validation metrics fail promotion gates, verdict becomes STOP."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+
+        contract = runtime.submit_validation_result(
+            result.task_id,
+            ValidationResultRequest(
+                actual_spend=1500,
+                metrics={"sample_count": 10, "intent_rate": 0.03, "pain_confirmation_rate": 0.10},
+                outcome="negative",
+            ),
+        )
+        assert contract.verdict == DecisionVerdict.STOP
+        assert contract.allowed_investment == 0
+
+    asyncio.run(scenario())
+
+
+def test_contract_human_override_recorded(tmp_path):
+    """User can override system verdict, but both are recorded separately."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+
+        # Metrics fail → system says STOP, but user overrides to GO
+        contract = runtime.submit_validation_result(
+            result.task_id,
+            ValidationResultRequest(
+                actual_spend=1500,
+                metrics={"sample_count": 10, "intent_rate": 0.03},
+                outcome="positive",  # user disagrees with system
+            ),
+        )
+        assert contract.verdict == DecisionVerdict.GO
+        assert contract.human_override == DecisionVerdict.GO
+        assert any("人工覆盖" in b for b in contract.core_basis)
 
     asyncio.run(scenario())
