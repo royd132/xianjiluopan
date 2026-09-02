@@ -242,6 +242,7 @@ class DecisionContract(BaseModel):
     recalculation_triggers: list[str] = Field(default_factory=list)
     evidence_coverage: EvidenceCoverage
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    system_verdict: DecisionVerdict | None = None
     human_override: DecisionVerdict | None = None
 
 

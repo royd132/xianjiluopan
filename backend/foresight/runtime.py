@@ -696,6 +696,7 @@ class ForesightRuntime:
         elif new_verdict == DecisionVerdict.STOP:
             contract.allowed_investment = 0
 
+        contract.system_verdict = system_verdict
         contract.verdict = new_verdict
         contract.human_override = human_override
         contract.core_basis.append(

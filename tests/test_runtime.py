@@ -528,6 +528,7 @@ def test_contract_metrics_pass_promotes_to_go(tmp_path):
             ),
         )
         assert contract.verdict == DecisionVerdict.GO
+        assert contract.system_verdict == DecisionVerdict.GO
         assert contract.allowed_investment == 30000
         assert contract.human_override is None
 
@@ -552,6 +553,7 @@ def test_contract_metrics_fail_stops(tmp_path):
             ),
         )
         assert contract.verdict == DecisionVerdict.STOP
+        assert contract.system_verdict == DecisionVerdict.STOP
         assert contract.allowed_investment == 0
 
     asyncio.run(scenario())
@@ -576,6 +578,7 @@ def test_contract_human_override_recorded(tmp_path):
             ),
         )
         assert contract.verdict == DecisionVerdict.GO
+        assert contract.system_verdict == DecisionVerdict.STOP
         assert contract.human_override == DecisionVerdict.GO
         assert any("人工覆盖" in b for b in contract.core_basis)
 

@@ -104,7 +104,7 @@ function App() {
   const [decisionContract, setDecisionContract] = useState(null);
   const [plannedInvestment, setPlannedInvestment] = useState('30000');
   const [investmentStage, setInvestmentStage] = useState('首批备货');
-  const [validationMetrics, setValidationMetrics] = useState({ sample_count: '', intent_rate: '', cpc: '', pain_confirmation_rate: '' });
+  const [validationMetrics, setValidationMetrics] = useState({ sample_count: '', intent_rate: '', cpc: '', pain_confirmation_rate: '', actual_spend: '1800' });
   const [validationSubmitting, setValidationSubmitting] = useState(false);
   const [runtimeState, setRuntimeState] = useState('checking');
   const [runtimeMessage, setRuntimeMessage] = useState('正在检测多 Agent Runtime');
@@ -451,10 +451,10 @@ function App() {
           <button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="关闭导航"><X size={18} /></button>
         </div>
         <nav className="nav-list" aria-label="主导航">
-          <button className={activeNav === 'workspace' ? 'active' : ''} onClick={() => handleNav('workspace')}><LayoutDashboard size={18} />洞察工作台</button>
+          <button className={activeNav === 'workspace' ? 'active' : ''} onClick={() => handleNav('workspace')}><LayoutDashboard size={18} />首单决策台</button>
           <button className={activeNav === 'radar' ? 'active' : ''} onClick={() => handleNav('radar')}><Target size={18} />痛点雷达</button>
           <button className={activeNav === 'alerts' ? 'active' : ''} onClick={() => handleNav('alerts')}><Bell size={18} />失效条件{failureConditionCount > 0 && <span className="nav-badge">{failureConditionCount}</span>}</button>
-          <button className={activeNav === 'history' ? 'active' : ''} onClick={() => handleNav('history')}><History size={18} />历史洞察</button>
+          <button className={activeNav === 'history' ? 'active' : ''} onClick={() => handleNav('history')}><History size={18} />决策记录</button>
           <button className={activeNav === 'evolution' ? 'active' : ''} onClick={() => handleNav('evolution')}><Activity size={18} />演进中心{openFailures.length > 0 && <span className="nav-badge">{openFailures.length}</span>}</button>
         </nav>
         <div className="sidebar-section-label">工作空间</div>
@@ -472,7 +472,7 @@ function App() {
       <main className="main-content">
         <header className="topbar">
           <button className="icon-button menu-button" onClick={() => setMobileNav(true)} aria-label="打开导航"><PanelTop size={20} /></button>
-          <div className="breadcrumb"><span>洞察工作台</span><ArrowRight size={14} /><strong>{query || '新建洞察'}</strong></div>
+          <div className="breadcrumb"><span>首单决策台</span><ArrowRight size={14} /><strong>{query || '新建决策'}</strong></div>
           <div className="top-actions">
             <span className={`data-status ${runtimeState}`}><i />{runtimeMessage}</span>
             <button className="icon-button" onClick={() => setHistoryOpen(true)} aria-label="查看历史"><History size={18} /></button>
@@ -502,7 +502,7 @@ function App() {
               </div>
               <button className="primary-button" onClick={startAnalysis} disabled={running}>
                 {running ? <LoaderCircle className="spin" size={18} /> : <Sparkles size={18} />}
-                {running ? '分析中' : '开始洞察'}
+                {running ? '生成中' : '生成首单决策'}
               </button>
             </div>
             <div className="query-options">
@@ -536,7 +536,7 @@ function App() {
           {!hasReport ? (
             <section className="report-empty" ref={resultsRef}>
               <span className="report-empty-icon"><PackageSearch size={28} /></span>
-              <div><span className="eyebrow">等待真实研究任务</span><h2>还没有生成决策报告</h2><p>选择品类、目标市场和数据模式后启动洞察。系统不会在首屏预填趋势、价格或评论结论。</p></div>
+              <div><span className="eyebrow">等待首单决策</span><h2>还没有生成决策契约</h2><p>输入品类、目标市场、决策阶段和计划投入后启动。系统不会在首轮直接建议 Go。</p></div>
               <div className="empty-contract"><ShieldCheck size={16} /><span>真实模式缺少必要数据时会直接拒绝，不会自动换成演示数字。</span></div>
             </section>
           ) : (
@@ -598,9 +598,9 @@ function App() {
                   </ul>
                 </details>
               )}
-              {decisionContract.human_override && (
+              {decisionContract.human_override && decisionContract.system_verdict && (
                 <div style={{ marginTop: 12, padding: '8px 12px', background: '#fef3c7', borderRadius: 6, fontSize: 13, color: '#92400e' }}>
-                  ⚠ 人工覆盖：系统判定={decisionContract.verdict === 'GO' ? 'STOP' : 'GO'}，已由人工覆盖为 {decisionContract.verdict}
+                  ⚠ 人工覆盖：系统判定={decisionContract.system_verdict}，已由人工覆盖为 {decisionContract.human_override}
                 </div>
               )}
             </section>
@@ -608,23 +608,24 @@ function App() {
 
           {decisionContract?.verdict === 'VALIDATE' && currentTaskId && (
             <section className="validation-form" style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: 20, marginBottom: 24 }}>
-              <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>提交验证结果</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-                <label style={{ fontSize: 13 }}>样本量<input type="number" value={validationMetrics.sample_count} onChange={(e) => setValidationMetrics({ ...validationMetrics, sample_count: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
-                <label style={{ fontSize: 13 }}>意向率 (0-1)<input type="number" step="0.01" value={validationMetrics.intent_rate} onChange={(e) => setValidationMetrics({ ...validationMetrics, intent_rate: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
-                <label style={{ fontSize: 13 }}>CPC (¥)<input type="number" step="0.1" value={validationMetrics.cpc} onChange={(e) => setValidationMetrics({ ...validationMetrics, cpc: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
-                <label style={{ fontSize: 13 }}>痛点确认率 (0-1)<input type="number" step="0.01" value={validationMetrics.pain_confirmation_rate} onChange={(e) => setValidationMetrics({ ...validationMetrics, pain_confirmation_rate: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
+              <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>提交验证结果 · 首单晋级闸门</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                <label style={{ fontSize: 13 }}>本次实际验证花费（¥）<input type="number" value={validationMetrics.actual_spend} onChange={(e) => setValidationMetrics({ ...validationMetrics, actual_spend: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
+                <label style={{ fontSize: 13 }}>样本量 <small style={{ color: '#6b7280' }}>要求 ≥30</small><input type="number" value={validationMetrics.sample_count} onChange={(e) => setValidationMetrics({ ...validationMetrics, sample_count: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
+                <label style={{ fontSize: 13 }}>购买意向率（%） <small style={{ color: '#6b7280' }}>要求 ≥12%</small><input type="number" step="1" value={validationMetrics.intent_rate} onChange={(e) => setValidationMetrics({ ...validationMetrics, intent_rate: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
+                <label style={{ fontSize: 13 }}>CPC（¥）</label>
+                <label style={{ fontSize: 13 }}>痛点确认率（%） <small style={{ color: '#6b7280' }}>要求 ≥30%</small><input type="number" step="1" value={validationMetrics.pain_confirmation_rate} onChange={(e) => setValidationMetrics({ ...validationMetrics, pain_confirmation_rate: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
               </div>
               <button className="primary-button" disabled={validationSubmitting} onClick={async () => {
                 setValidationSubmitting(true);
                 try {
                   const metrics = {};
                   if (validationMetrics.sample_count) metrics.sample_count = Number(validationMetrics.sample_count);
-                  if (validationMetrics.intent_rate) metrics.intent_rate = Number(validationMetrics.intent_rate);
+                  if (validationMetrics.intent_rate) metrics.intent_rate = Number(validationMetrics.intent_rate) / 100;
                   if (validationMetrics.cpc) metrics.cpc = Number(validationMetrics.cpc);
-                  if (validationMetrics.pain_confirmation_rate) metrics.pain_confirmation_rate = Number(validationMetrics.pain_confirmation_rate);
+                  if (validationMetrics.pain_confirmation_rate) metrics.pain_confirmation_rate = Number(validationMetrics.pain_confirmation_rate) / 100;
                   const contract = await foresightClient.submitValidationResult(currentTaskId, {
-                    actual_spend: 1800,
+                    actual_spend: Number(validationMetrics.actual_spend) || 0,
                     metrics,
                     outcome: 'inconclusive',
                   });
@@ -717,7 +718,7 @@ function App() {
 
       {selectedEvidence && <EvidenceDetailModal evidence={selectedEvidence} onClose={() => setSelectedEvidence(null)} />}
 
-      {historyOpen && <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setHistoryOpen(false)}><aside className="history-drawer"><div className="drawer-head"><div><span className="eyebrow">工作记录</span><h2>历史洞察</h2></div><button className="icon-button" onClick={() => setHistoryOpen(false)}><X size={18} /></button></div>{hasReport ? <button className="history-item" onClick={() => setHistoryOpen(false)}><span className="history-icon"><FileText size={17} /></span><span><strong>{reportCategory}</strong><small>{selectedReportMarket?.name} · {formatReportTime(reportGeneratedAt)}</small></span><b>{opportunityScore}</b></button> : <div className="history-empty"><History size={24} /><strong>暂无真实洞察记录</strong><p>完成一次研究任务后，报告会出现在这里。</p></div>}</aside></div>}
+      {historyOpen && <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setHistoryOpen(false)}><aside className="history-drawer"><div className="drawer-head"><div><span className="eyebrow">工作记录</span><h2>决策记录</h2></div><button className="icon-button" onClick={() => setHistoryOpen(false)}><X size={18} /></button></div>{hasReport ? <button className="history-item" onClick={() => setHistoryOpen(false)}><span className="history-icon"><FileText size={17} /></span><span><strong>{reportCategory}</strong><small>{selectedReportMarket?.name} · {formatReportTime(reportGeneratedAt)}</small></span><b>{decisionContract ? `${decisionContract.verdict} · ${decisionContract.evidence_coverage?.maturity || '—'}` : '—'}</b></button> : <div className="history-empty"><History size={24} /><strong>暂无决策记录</strong><p>完成一次研究任务后，决策契约会出现在这里。</p></div>}</aside></div>}
       {toast && <div className="toast"><Check size={16} />{toast}</div>}
     </div>
   );

@@ -173,7 +173,7 @@
 
 ```mermaid
 flowchart TB
-    UI["React Workbench"] <-->|"REST + SSE / AGUI"| API["FastAPI"]
+    UI["React 首单决策台"] -->|"品类 + 市场 + 投入阶段 + 计划投入"| API["FastAPI"]
     API --> RT["Event-driven Multi-Agent Runtime"]
     RT --> BB["CollaborationBlackboard"]
     RT --> H["Agent Harness"]
@@ -190,8 +190,16 @@ flowchart TB
     BB --> A6["Safety & Evaluation Agent"]
 
     SB -->|"retrieve"| A5
-    A6 --> CARDS["四类 Decision Cards"]
-    CARDS --> HITL["人工复核"]
+    A5 --> CARDS["四类分析卡（证据层）"]
+    A5 --> COV["Evidence Coverage（5 问）"]
+    COV --> CONTRACT["Decision Contract"]
+    CONTRACT --> VERDICT{"GO / VALIDATE / STOP"}
+    VERDICT -->|VALIDATE| EXP["最低成本实验设计"]
+    EXP --> VR["真实验证结果回填"]
+    VR --> GATES["Promotion Gates"]
+    GATES --> VERDICT
+    A6 --> CARDS
+    CONTRACT --> HITL["人工复核"]
     HITL --> FLY["Feedback Flywheel"]
     HITL --> SB
     FLY --> M
@@ -200,19 +208,21 @@ flowchart TB
 ### 请求处理流程
 
 ```text
-① 输入品类 × 目标国家
+① 输入品类 × 目标国家 × 投入阶段 × 计划投入金额
         ↓
 ② Collector 发布原始数据与证据
         ↓
 ③ Review / Market / Supply Chain 三 Agent 并行分析
         ↓
-④ Decision Compiler 编译四类决策卡
+④ Decision Compiler 编译四类分析卡 + Evidence Coverage + Decision Contract
         ↓
 ⑤ Safety Evaluator 执行强制闸门
         ↓
-⑥ SSE 推送进度，React 呈现结果
+⑥ SSE 推送进度，React 首先展示 Go / Validate / Stop 决策契约
         ↓
-⑦ 人工复核写入正向/负向案例记忆
+⑦ 若 VALIDATE → 用户执行最小验证 → 提交指标 → 系统按 Promotion Gates 重判
+        ↓
+⑧ 人工复核写入正向/负向案例记忆
 ```
 
 ## 🤖 六大核心 Agent
