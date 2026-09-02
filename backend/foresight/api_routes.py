@@ -77,21 +77,6 @@ async def reload_mock_provider(
     }
 
 
-@router.post("/runtime/providers/mock/rollback")
-async def rollback_mock_provider(runtime: RuntimeDep, _admin: AdminDep) -> dict:
-    try:
-        plugin = runtime.rollback_provider("global")
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {
-        "plugin": plugin,
-        "activation": "new-tasks-only",
-        "running_tasks_remain_pinned": True,
-    }
-
-
 @router.post("/research", status_code=202)
 async def create_research(request: ResearchRequest, runtime: RuntimeDep) -> dict:
     try:

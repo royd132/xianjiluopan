@@ -10,9 +10,6 @@ from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
 
-from .extensions import ToolDefinition
-
-
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -31,33 +28,15 @@ def open_sqlite(path: Path) -> sqlite3.Connection:
     return connection
 
 
-class TraceWriter:
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+class _SqliteBase:
+    """Shared SQLite connection management — ContextVar for async safety."""
 
-    def write(self, trace_id: str, task_id: str, kind: str, payload: dict[str, Any]) -> None:
-        record = {
-            "trace_id": trace_id,
-            "task_id": task_id,
-            "kind": kind,
-            "timestamp": utc_now(),
-            "payload": payload,
-        }
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
-
-
-class MemoryStore:
-    """SQLite-backed memory plus the durable evolution registry."""
-
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, context_name: str) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._connection_context: ContextVar[sqlite3.Connection | None] = ContextVar(
-            f"memory-store-{id(self)}", default=None
+            context_name, default=None
         )
-        self._init_db()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -93,6 +72,31 @@ class MemoryStore:
         finally:
             self._connection_context.reset(token)
             connection.close()
+
+
+class TraceWriter:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write(self, trace_id: str, task_id: str, kind: str, payload: dict[str, Any]) -> None:
+        record = {
+            "trace_id": trace_id,
+            "task_id": task_id,
+            "kind": kind,
+            "timestamp": utc_now(),
+            "payload": payload,
+        }
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+
+class MemoryStore(_SqliteBase):
+    """SQLite-backed memory plus the durable evolution registry."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(path, f"memory-store-{id(self)}")
+        self._init_db()
 
     def _init_db(self) -> None:
         with self._connect() as connection:
@@ -287,15 +291,11 @@ class MemoryStore:
         return [{**dict(row), "metrics": json.loads(row["metrics_json"])} for row in rows]
 
 
-class RunStore:
+class RunStore(_SqliteBase):
     """Append-only run ledger plus node-level recovery state."""
 
     def __init__(self, path: Path) -> None:
-        self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection_context: ContextVar[sqlite3.Connection | None] = ContextVar(
-            f"run-store-{id(self)}", default=None
-        )
+        super().__init__(path, f"run-store-{id(self)}")
         with self._connect() as connection:
             connection.executescript("""
                 CREATE TABLE IF NOT EXISTS runs (
@@ -340,41 +340,6 @@ class RunStore:
                 connection.execute(
                     "ALTER TABLE runs ADD COLUMN component_snapshot_json TEXT NOT NULL DEFAULT '{}'"
                 )
-
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
-        active = self._connection_context.get()
-        if active is not None:
-            try:
-                yield active
-                active.commit()
-            except Exception:
-                active.rollback()
-                raise
-            return
-        connection = open_sqlite(self.path)
-        try:
-            yield connection
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
-
-    @contextmanager
-    def connection_scope(self) -> Iterator[None]:
-        connection = open_sqlite(self.path)
-        token = self._connection_context.set(connection)
-        try:
-            yield
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            self._connection_context.reset(token)
-            connection.close()
 
     def start_run(
         self,
@@ -523,13 +488,3 @@ class CheckpointStore:
     def load(self, task_id: str) -> dict[str, Any] | None:
         path = self.directory / f"{task_id}.json"
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
-
-
-def __getattr__(name: str) -> Any:
-    """Keep the pre-split AgentHarness import path working without a cycle."""
-
-    if name == "AgentHarness":
-        from .harness_runtime import AgentHarness
-
-        return AgentHarness
-    raise AttributeError(name)

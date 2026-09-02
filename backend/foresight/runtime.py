@@ -18,8 +18,8 @@ from .agents import (
 from .data import MockDataProvider
 from .events import CollaborationBlackboard, EventType, RuntimeEvent
 from .evolution import EvolutionEngine, FeedbackFlywheel
-from .extensions import PluginManifest, ScopeContext
-from .harness import ToolDefinition, stable_hash
+from .extensions import PluginManifest, ScopeContext, ToolDefinition
+from .harness import stable_hash
 from .harness_runtime import AgentHarness
 from .skills import SkillBank, SkillStore, load_seed_skills
 from .models import (
@@ -148,7 +148,7 @@ class ForesightRuntime:
                     f"{scope_key}:{manifest.plugin_id}",
                     {"version": version, "scope_key": scope_key, "manifest": manifest.as_dict()},
                 )
-        return handle.as_dict()
+        return handle
 
     def install_real_provider(
         self,
@@ -202,43 +202,27 @@ class ForesightRuntime:
                     f"{scope_key}:{manifest.plugin_id}",
                     {"version": version, "scope_key": scope_key, "manifest": manifest.as_dict()},
                 )
-        return handle.as_dict()
-
-    def rollback_provider(self, scope_key: str = "global") -> dict[str, Any]:
-        handle = self.harness.plugins.rollback("provider.mock-data", scope_key)
-        self.harness.memory.put(
-            "runtime_plugins",
-            f"{scope_key}:provider.mock-data",
-            {
-                "version": handle.manifest.version,
-                "scope_key": scope_key,
-                "manifest": handle.manifest.as_dict(),
-            },
-        )
-        return handle.as_dict()
+        return handle
 
     def _ensure_snapshot_plugins(self, snapshot) -> None:
         for plugin in snapshot.plugins:
             version = str(plugin["version"])
-            scope_key = str(plugin.get("scope_key", "global"))
             plugin_id = plugin.get("plugin_id")
             if plugin_id == "provider.mock-data" and not self.harness.plugins.has_generation(
-                plugin_id, version, scope_key
+                plugin_id, version
             ):
                 self.install_provider(
                     MockDataProvider(),
                     version,
-                    scope_key=scope_key,
                     make_active=False,
                     persist=False,
                 )
             if plugin_id == "provider.real-data" and not self.harness.plugins.has_generation(
-                plugin_id, version, scope_key
+                plugin_id, version
             ):
                 self.install_real_provider(
                     self.real_provider,
                     version,
-                    scope_key=scope_key,
                     make_active=False,
                     persist=False,
                 )
@@ -425,11 +409,7 @@ class ForesightRuntime:
         else:
             active_policy = self.evolution.active_policy()
             component_snapshot = self.harness.create_component_snapshot(
-                ScopeContext(
-                    tenant_id=request.workspace_id,
-                    preset_id=request.market,
-                    task_id=task_id,
-                ),
+                ScopeContext(task_id=task_id),
                 {"version": active_policy["version"], "policy": active_policy["policy"]},
             )
         fingerprint = stable_hash(

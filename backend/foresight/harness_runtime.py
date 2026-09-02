@@ -12,7 +12,7 @@ from .extensions import (
     ComponentSnapshot,
     PluginManager,
     ScopeContext,
-    ScopedToolRegistry,
+    ToolRegistry,
 )
 from .harness import CheckpointStore, MemoryStore, RunStore, TraceWriter, stable_hash
 
@@ -28,7 +28,7 @@ class AgentHarness:
         self.memory = MemoryStore(root / "memory.db")
         self.checkpoints = CheckpointStore(root / "checkpoints")
         self.runs = RunStore(root / "runs.db")
-        self.tools = ScopedToolRegistry()
+        self.tools = ToolRegistry()
         self.plugins = PluginManager(self.tools)
         self.allowed_tools = {
             "mock_data",
@@ -87,14 +87,9 @@ class AgentHarness:
         if not run:
             raise KeyError(f"Component snapshot is unavailable for task {task_id}")
         if not run.get("component_snapshot"):
-            request = run.get("request", {})
             active_policy = self.memory.active_policy()
             snapshot = self.create_component_snapshot(
-                ScopeContext(
-                    tenant_id=str(request.get("workspace_id", "default")),
-                    preset_id=str(request.get("market", "global")),
-                    task_id=task_id,
-                ),
+                ScopeContext(task_id=task_id),
                 {
                     "version": active_policy["version"] if active_policy else "embedded-default",
                     "policy": active_policy["policy"] if active_policy else {},
@@ -119,28 +114,13 @@ class AgentHarness:
         task_id: str,
         **kwargs: Any,
     ) -> Any:
-        snapshot = self.component_snapshot_for_task(task_id)
-        scope = ScopeContext.from_dict(snapshot.scope)
-        tool_identity = snapshot.tools.get(tool_name, {})
-        pinned = tool_identity.get("registration_id")
-        definition = self.tools.get(
-            tool_name,
-            agent,
-            scope,
-            pinned,
-            tool_identity.get("plugin_id"),
-            tool_identity.get("plugin_version"),
-            tool_identity.get("scope_key"),
-        )
+        definition = self.tools.get(tool_name, agent)
         inspect.signature(definition.handler).bind(**kwargs)
         safe_args = {key: str(value)[:500] for key, value in kwargs.items()}
         start_payload = {
             "tool": tool_name,
             "agent": agent,
             "args": safe_args,
-            "plugin_id": tool_identity.get("plugin_id"),
-            "plugin_version": tool_identity.get("plugin_version"),
-            "component_snapshot": snapshot.digest,
         }
         self.trace.write(trace_id, task_id, "tool.start", start_payload)
         self.runs.record_event(task_id, trace_id, "tool.start", start_payload, agent)
