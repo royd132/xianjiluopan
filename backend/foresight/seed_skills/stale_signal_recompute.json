@@ -1,0 +1,20 @@
+{
+  "name": "stale-signal-recompute",
+  "description": "Detect when key observations have expired and trigger partial recomputation instead of reusing stale conclusions. Applied across all card types.",
+  "version": "0.1.0",
+  "scope_markets": ["*"],
+  "scope_categories": ["*"],
+  "triggers": [
+    {"keyword": "stale", "weight": 2.0},
+    {"keyword": "expired", "weight": 1.5},
+    {"keyword": "过期", "weight": 1.5},
+    {"keyword": "freshness", "weight": 1.0},
+    {"keyword": "recompute", "weight": 1.5},
+    {"keyword": "recalculate", "weight": 1.0}
+  ],
+  "inputs": ["evidences", "observations", "supply_signals"],
+  "outputs": ["validation_findings", "failure_conditions"],
+  "evidence_policy": "require_max_evidence_age_days:30;apply_confidence_penalty:0.05",
+  "body": "# Stale Signal Recompute Guard\n\n## Purpose\nPrevent decision cards from being published when key evidence has exceeded its freshness window. Triggers partial recomputation rather than full task restart.\n\n## Validation Steps\n1. Scan all evidences for freshness_class == 'live' or 'recent'\n2. Calculate age from observed_at or collected_at\n3. If any evidence exceeds maximum_evidence_age_days, flag as stale\n4. Apply confidence penalty proportional to staleness\n5. Add failure condition recommending recomputation\n\n## Stop Conditions\n- More than 50% of evidences are stale\n- Supply signals show 'alert' status with stale evidence\n- No fresh evidence available for key claims",
+  "status": "candidate"
+}

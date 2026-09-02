@@ -21,6 +21,7 @@ from .evolution import EvolutionEngine, FeedbackFlywheel
 from .extensions import PluginManifest, ScopeContext
 from .harness import ToolDefinition, stable_hash
 from .harness_runtime import AgentHarness
+from .skills import SkillBank, SkillStore, load_seed_skills
 from .models import (
     DecisionCard,
     EvidenceItem,
@@ -52,6 +53,9 @@ class ForesightRuntime:
         self.harness = AgentHarness(workdir)
         self.flywheel = FeedbackFlywheel(self.harness.memory)
         self.evolution = EvolutionEngine(self.harness.memory)
+        self.skill_store = SkillStore(Path(workdir) / "skills.db")
+        self.skills = SkillBank(self.skill_store)
+        load_seed_skills(self.skill_store)
         self.provider = MockDataProvider()
         self.real_provider = real_provider or RealDataProvider(datasets_dir)
         self.boards: dict[str, CollaborationBlackboard] = {}
@@ -459,6 +463,21 @@ class ForesightRuntime:
         try:
             for node in ("collect", "analyze", "compile", "validate"):
                 await self._execute_node(task_id, trace_id, request, board, node)
+                if node == "analyze":
+                    retrieved = self.skills.retrieve_for_research(
+                        request.category, request.market, request.mode
+                    )
+                    if retrieved:
+                        await board.publish_artifact("retrieved_skills", retrieved, "skill-bank")
+                        await board.publish_event(
+                            RuntimeEvent(
+                                EventType.SKILL_RETRIEVED,
+                                task_id,
+                                "skill-bank",
+                                f"Retrieved {len(retrieved)} skills for decision compilation",
+                                {"skills": [s["name"] for s in retrieved]},
+                            )
+                        )
 
             cards = board.read("decision_cards")
             result = ResearchResult(
@@ -593,6 +612,10 @@ class ForesightRuntime:
             failure_type=review.failure_type,
         )
         failure = self.flywheel.record(feedback, card)
+        if review.status in {"rejected", "discussed"} and (review.reason or review.failure_type):
+            self.skills.extract_candidate_from_feedback(
+                feedback.model_dump(mode="json"), card
+            )
         self.harness.memory.put("reviewed_cards", card_id, card)
         self.harness.memory.put("cards", card_id, {"task_id": task_id, "card": card})
         result = self.get_result(task_id)

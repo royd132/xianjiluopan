@@ -6,6 +6,8 @@ dist/
 reports/*.json
 !reports/demo.json
 !reports/demo_us_coffee.json
+!reports/demo_mx_blender.json
+!reports/demo_us_headphones.json
 __pycache__/
 .pytest_cache/
 *.egg-info/

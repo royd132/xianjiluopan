@@ -1,0 +1,20 @@
+{
+  "name": "review-pain-localization",
+  "description": "Distinguish target-market review pain points from cross-market transferable patterns. Ensures non-English pain points are properly attributed to their source market.",
+  "version": "0.1.0",
+  "scope_markets": ["*"],
+  "scope_categories": ["*"],
+  "triggers": [
+    {"keyword": "review", "weight": 2.0},
+    {"keyword": "pain point", "weight": 1.5},
+    {"keyword": "评论", "weight": 1.5},
+    {"keyword": "localization", "weight": 1.0},
+    {"keyword": "multilingual", "weight": 1.0},
+    {"keyword": "痛点", "weight": 1.5}
+  ],
+  "inputs": ["pain_points", "evidences", "reviews"],
+  "outputs": ["validation_findings", "failure_conditions"],
+  "evidence_policy": "require_minimum_source_evidence:1",
+  "body": "# Review Pain Localization Check\n\n## Purpose\nEnsure that pain points attributed to a target market actually come from that market's reviews, not from translated cross-market proxies.\n\n## Validation Steps\n1. For each pain point with market_scope == 'target_market', verify source_record_ids exist\n2. Check that at least one evidence has matching source_market\n3. Flag pain points derived from cross_market reviews as 'transferable_hypothesis'\n4. Ensure non-English sample_original is present for target-market pain points\n\n## Stop Conditions\n- Target-market pain points without source record IDs\n- All pain points are cross-market transfers\n- No original-language sample available",
+  "status": "candidate"
+}

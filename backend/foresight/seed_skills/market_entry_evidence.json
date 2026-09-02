@@ -1,0 +1,19 @@
+{
+  "name": "market-entry-evidence-check",
+  "description": "Validate evidence completeness before entering a new market. Checks that the decision card has target-market-specific evidence, not just cross-market proxies.",
+  "version": "0.1.0",
+  "scope_markets": ["*"],
+  "scope_categories": ["*"],
+  "triggers": [
+    {"keyword": "market entry", "weight": 2.0},
+    {"keyword": "选品", "weight": 1.5},
+    {"keyword": "evidence", "weight": 1.0},
+    {"keyword": "new market", "weight": 1.5},
+    {"keyword": "product selection", "weight": 1.0}
+  ],
+  "inputs": ["observations", "evidences", "market_scope"],
+  "outputs": ["validation_findings", "failure_conditions"],
+  "evidence_policy": "require_minimum_source_evidence:2",
+  "body": "# Market Entry Evidence Check\n\n## Purpose\nEnsure that product selection decisions are backed by target-market-specific evidence, not only cross-market proxies or category-general assumptions.\n\n## Validation Steps\n1. Count evidences where market_scope == 'target_market'\n2. Verify at least 2 source evidences reference the target country directly\n3. Flag cross_market and category_proxy evidences as supplementary only\n4. If target-market evidence is below threshold, add failure condition\n\n## Stop Conditions\n- Fewer than 2 target-market source evidences\n- All evidences are cross-market proxies\n- No non-English evidence available for target market",
+  "status": "candidate"
+}

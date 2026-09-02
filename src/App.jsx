@@ -5,20 +5,16 @@ import {
   ArrowRight,
   BadgeCheck,
   Bell,
-  BookOpen,
   Boxes,
   Check,
   CheckCircle2,
   ChevronDown,
-  CircleDollarSign,
-  Clipboard,
   Clock3,
   Compass,
   Database,
   Download,
   ExternalLink,
   FileText,
-  Globe2,
   History,
   LayoutDashboard,
   LoaderCircle,
@@ -33,7 +29,6 @@ import {
   Sparkles,
   Target,
   TrendingUp,
-  Users,
   Printer,
   X,
   XCircle,
@@ -63,25 +58,15 @@ import {
   markets,
   scopeLabels,
 } from './features/research/researchConfig';
+import { DecisionCardGrid, CardDetailModal } from './features/decision-cards/DecisionCards';
+import { EvidenceTable, EvidenceDetailModal } from './features/evidence/EvidencePanel';
+import { EvolutionPanel } from './features/evolution/EvolutionCenter';
+import { formatReportTime, ScoreRing } from './features/shared/utils';
 
 function MiniBars({ values, state }) {
   return (
     <div className={`mini-bars ${state}`} aria-label="趋势图">
       {values.map((v, index) => <span key={index} style={{ height: `${v}%` }} />)}
-    </div>
-  );
-}
-
-function formatReportTime(value) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date(value));
-}
-
-function ScoreRing({ value, size = 42 }) {
-  return (
-    <div className="score-ring" style={{ '--score': `${value * 3.6}deg`, width: size, height: size }}>
-      <span>{value}</span>
     </div>
   );
 }
@@ -447,11 +432,7 @@ function App() {
     if (id === 'workspace') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const activePolicy = evolution?.active_policy;
-  const readyPolicy = evolution?.policy_versions?.find((item) => item.status === 'ready');
-  const latestEvolutionRun = evolution?.evolution_runs?.[0];
   const openFailures = evolution?.failure_cases?.filter((item) => item.status === 'open') || [];
-  const validationImprovement = latestEvolutionRun?.metrics?.validation_improvement || 0;
 
   return (
     <div className="app-shell">
@@ -586,19 +567,7 @@ function App() {
             </section>
           ) : (
             <>
-              <div className="content-title" id="decision-cards"><div><span className="eyebrow">决策处方</span><h2>四张卡，回答怎么做</h2></div><span className="validity"><Clock3 size={15} />结论有效期剩余 14 天</span></div>
-              <section className="card-grid">
-                {decisionCards.map((card) => {
-                  const Icon = card.icon;
-                  return (
-                    <article key={card.id} className={`decision-card ${card.tone}`} onClick={() => setSelectedCard(card)} tabIndex="0" onKeyDown={(event) => event.key === 'Enter' && setSelectedCard(card)}>
-                      <div className="card-head"><span className="card-type"><Icon size={17} />{card.type}</span><ScoreRing value={card.confidence} /></div>
-                      <h3>{card.title}</h3><p>{card.summary}</p>
-                      <div className="card-footer"><div><small>{card.metric}</small><strong>{card.metricValue}</strong></div><span>{card.source}<ArrowRight size={15} /></span></div>
-                    </article>
-                  );
-                })}
-              </section>
+              <DecisionCardGrid cards={decisionCards} onSelectCard={setSelectedCard} />
             </>
           )}
 
@@ -629,12 +598,7 @@ function App() {
             </article>
           </section>
 
-          <section className="evidence-panel" id="evidence-chain">
-            <div className="panel-head"><div><span className="eyebrow">可追溯依据</span><h2>这项决策，凭什么？</h2></div><span className="verified-pill"><ShieldCheck size={15} />{reportEvidence.length} 条结构校验通过</span></div>
-            <div className="evidence-table">
-              {reportEvidence.map((item, index) => <button key={`${item.source}-${index}`} onClick={() => setSelectedEvidence(item)}><span className="evidence-index">{String(index + 1).padStart(2, '0')}</span><span className="evidence-source"><small>{item.type} · {scopeLabels[item.marketScope]} · {freshnessLabels[item.freshnessClass]}</small><strong>{item.source}</strong></span><span className="evidence-claim">{item.claim}</span><strong className="evidence-value">{item.value}</strong><span className="evidence-open"><ArrowRight size={15} /></span></button>)}
-            </div>
-          </section>
+          <EvidenceTable evidence={reportEvidence} onSelectEvidence={setSelectedEvidence} />
 
           <section className="review-bar">
             <div><ShieldCheck size={19} /><span><strong>AI 生成 · 等待人工复核</strong><small>你的反馈将用于优化下一次决策</small></span></div>
@@ -645,32 +609,14 @@ function App() {
             </div>
           </section>
 
-          <section className="evolution-panel" id="evolution-center">
-            <div className="evolution-head">
-              <div><span className="eyebrow">Harness Evolution</span><h2>策略演进中心</h2><p>失败案例不会直接改写线上策略。当前指标来自合成规则回放，只证明门禁逻辑可复现，不代表商家经营结果。</p></div>
-              <div className="evolution-head-actions">
-                <span className="policy-version"><ShieldCheck size={15} />当前 {activePolicy?.version || 'policy-v1'}</span>
-                <button className="icon-button" onClick={loadEvolution} aria-label="刷新演进状态"><RefreshCw size={17} /></button>
-              </div>
-            </div>
-            <div className="evolution-flow" aria-label="策略演进流程">
-              {['失败案例', '候选策略', 'Validation', 'Holdout', '人工激活'].map((step, index) => <div key={step} className={index === 0 && openFailures.length ? 'active' : index > 0 && latestEvolutionRun ? 'done' : ''}><span>{index + 1}</span><strong>{step}</strong></div>)}
-            </div>
-            <div className="evolution-metrics">
-              <div><span>待处理失败案例</span><strong>{openFailures.length}</strong><small>{openFailures[0]?.failure_type === 'weak_evidence' ? '证据门槛不足' : openFailures.length ? '等待候选生成' : '暂无开放案例'}</small></div>
-              <div><span>候选版本</span><strong>{readyPolicy?.version || latestEvolutionRun?.candidate_version || '—'}</strong><small>{readyPolicy ? '评测通过，等待激活' : latestEvolutionRun?.candidate_version === activePolicy?.version ? '已激活为稳定版本' : '不会覆盖当前稳定版本'}</small></div>
-              <div><span>Validation 门禁变化</span><strong>{latestEvolutionRun ? `+${Math.round(validationImprovement * 100)}pp` : '—'}</strong><small>{latestEvolutionRun ? `合成回放 n=${latestEvolutionRun.metrics.validation.candidate.cases} · 规则判断准确率 ${latestEvolutionRun.metrics.validation.candidate.accuracy * 100}%` : '基线与候选双回放'}</small></div>
-              <div><span>Holdout 非回归</span><strong>{latestEvolutionRun ? (latestEvolutionRun.decision === 'ready' ? '通过' : '拒绝') : '—'}</strong><small>{latestEvolutionRun ? `合成回放 n=${latestEvolutionRun.metrics.holdout.candidate.cases} · 召回率 ${latestEvolutionRun.metrics.holdout.candidate.recall * 100}%` : '保护未参与生成的数据'}</small></div>
-            </div>
-            <div className="evolution-actions">
-              <p><BadgeCheck size={16} />合成门禁集：Validation n={evolution?.evaluation_dataset?.validation || 0}，Holdout n={evolution?.evaluation_dataset?.holdout || 0}；活动策略要求至少 {activePolicy?.policy?.minimum_evidence_count || 3} 条证据。</p>
-              <div>
-                <button className="secondary-button" onClick={rollbackEvolutionPolicy} disabled={evolutionLoading || !activePolicy?.parent_version}><History size={15} />回滚</button>
-                {readyPolicy && <button className="secondary-button activate-policy" onClick={() => activateEvolutionPolicy(readyPolicy.version)} disabled={evolutionLoading}><ShieldCheck size={15} />激活 {readyPolicy.version}</button>}
-                <button className="primary-button compact" onClick={createEvolutionCandidate} disabled={evolutionLoading || openFailures.length === 0}>{evolutionLoading ? <LoaderCircle className="spin" size={16} /> : <Sparkles size={16} />}生成候选并评测</button>
-              </div>
-            </div>
-          </section>
+          <EvolutionPanel
+            evolution={evolution}
+            evolutionLoading={evolutionLoading}
+            onLoadEvolution={loadEvolution}
+            onCreateCandidate={createEvolutionCandidate}
+            onActivatePolicy={activateEvolutionPolicy}
+            onRollbackPolicy={rollbackEvolutionPolicy}
+          />
 
           <footer><span><Compass size={15} />先机罗盘 · 决策可追溯，结论可证伪</span><span>数据模式：{reportModeLabels[reportMode] || reportMode}{reportMode === 'real' ? ' · 当前竞品价仍需授权源' : ''}</span></footer>
             </>
@@ -678,46 +624,12 @@ function App() {
         </div>
       </main>
 
-      {selectedCard && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedCard(null)}><div className="card-modal" role="dialog" aria-modal="true" aria-label={`${selectedCard.type}详情`}><button className="modal-close icon-button" onClick={() => setSelectedCard(null)}><X size={19} /></button><CardDetail card={selectedCard} onCopy={copyText} onReview={setReview} reviewStatus={reviewStatus} evidence={reportEvidence} reportMarket={reportMarket} generatedAt={reportGeneratedAt} reportMode={reportMode} /></div></div>}
+      {selectedCard && <CardDetailModal card={selectedCard} onClose={() => setSelectedCard(null)} onCopy={copyText} onReview={setReview} reviewStatus={reviewStatus} evidence={reportEvidence} reportMarket={reportMarket} generatedAt={reportGeneratedAt} reportMode={reportMode} />}
 
-      {selectedEvidence && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedEvidence(null)}><div className="card-modal evidence-modal" role="dialog" aria-modal="true" aria-label="证据详情"><button className="modal-close icon-button" onClick={() => setSelectedEvidence(null)}><X size={19} /></button><EvidenceDetail evidence={selectedEvidence} /></div></div>}
+      {selectedEvidence && <EvidenceDetailModal evidence={selectedEvidence} onClose={() => setSelectedEvidence(null)} />}
 
       {historyOpen && <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setHistoryOpen(false)}><aside className="history-drawer"><div className="drawer-head"><div><span className="eyebrow">工作记录</span><h2>历史洞察</h2></div><button className="icon-button" onClick={() => setHistoryOpen(false)}><X size={18} /></button></div>{hasReport ? <button className="history-item" onClick={() => setHistoryOpen(false)}><span className="history-icon"><FileText size={17} /></span><span><strong>{reportCategory}</strong><small>{selectedReportMarket?.name} · {formatReportTime(reportGeneratedAt)}</small></span><b>{opportunityScore}</b></button> : <div className="history-empty"><History size={24} /><strong>暂无真实洞察记录</strong><p>完成一次研究任务后，报告会出现在这里。</p></div>}</aside></div>}
       {toast && <div className="toast"><Check size={16} />{toast}</div>}
-    </div>
-  );
-}
-
-function CardDetail({ card, onCopy, onReview, reviewStatus, evidence, reportMarket, generatedAt, reportMode }) {
-  const Icon = card.icon;
-  const detailEvidence = card.runtimeCard ? mapRuntimeEvidence([card.runtimeCard]).slice(0, 3) : evidence.slice(0, 3);
-  const reportCode = `FC-${reportMarket}-${new Date(generatedAt).toISOString().slice(2, 10).replaceAll('-', '')}`;
-  return (
-    <div className="modal-content">
-      <div className="modal-title"><span className={`modal-icon ${card.tone}`}><Icon size={20} /></span><div><span className="eyebrow">{card.type} · {reportCode}</span><h2>{card.title}</h2></div><div className="confidence-block"><ScoreRing value={card.confidence} size={48} /><small>置信度</small></div></div>
-      <div className="action-box"><span>行动指令</span><p>{card.summary}</p></div>
-      <div className="detail-section"><h3><BookOpen size={17} />凭什么 <span>证据链 · {detailEvidence.length} 条</span></h3>{detailEvidence.map((item) => <div className="detail-evidence" key={item.source}><BadgeCheck size={16} /><div><strong>{item.claim}</strong><small>{item.source}</small></div><b>{item.value}</b></div>)}</div>
-      <div className="detail-two-col"><div className="detail-section hook-box"><h3><Users size={17} />最小市场验证</h3><p><b>验证人群</b> {card.hook?.audience}</p><p><b>验证渠道</b> {card.hook?.channel}</p><div className="copy-hook"><span>{card.hook?.message}</span><button onClick={() => onCopy(card.hook?.message)}><Clipboard size={15} />复制</button></div></div><div className="detail-section failure-box"><h3><AlertTriangle size={17} />什么时候失效</h3>{(card.failureConditions || [{ condition: '关键市场信号越过阈值' }]).slice(0, 2).map((item) => <p key={item.condition}>{item.condition}</p>)}<button><Bell size={15} />失效条件已登记</button></div></div>
-      <div className="modal-compliance"><ShieldCheck size={17} /><span>AI 生成 · {reportModeLabels[reportMode] || reportMode} · 需人工复核<small>{detailEvidence.map((item) => item.source).join(' / ')} · 任务完成于 {formatReportTime(generatedAt)}</small></span></div>
-      <div className="modal-actions"><span>复核这张卡</span><div><button className={reviewStatus === 'approved' ? 'active approved' : ''} onClick={() => onReview('approved')}><CheckCircle2 size={16} />采纳</button><button className={reviewStatus === 'discussed' ? 'active discussed' : ''} onClick={() => onReview('discussed')}><MessageCircleMore size={16} />待议</button><button className={reviewStatus === 'rejected' ? 'active rejected' : ''} onClick={() => onReview('rejected')}><XCircle size={16} />驳回</button></div></div>
-    </div>
-  );
-}
-
-function EvidenceDetail({ evidence }) {
-  return (
-    <div className="modal-content">
-      <div className="modal-title evidence-modal-title"><span className="modal-icon blue"><Database size={20} /></span><div><span className="eyebrow">{evidence.type} · {scopeLabels[evidence.marketScope]}</span><h2>{evidence.source}</h2></div></div>
-      <div className="evidence-detail-grid">
-        <div><span>证据结论</span><p>{evidence.claim}</p></div>
-        <div><span>原始值 / 原语</span><blockquote>{evidence.value}</blockquote></div>
-        <div><span>观察期</span><strong>{evidence.observationPeriod || (evidence.observedAt ? formatReportTime(evidence.observedAt) : '待确认')}</strong></div>
-        <div><span>读取时间</span><strong>{evidence.collectedAt ? formatReportTime(evidence.collectedAt) : '待确认'}</strong></div>
-        <div><span>时间属性</span><strong>{freshnessLabels[evidence.freshnessClass]}</strong></div>
-        <div><span>来源市场</span><strong>{evidence.sourceMarket || 'global / 未标注'}</strong></div>
-      </div>
-      <div className="modal-compliance"><ShieldCheck size={17} /><span>{evidence.evidenceKind === 'derived' ? '模型派生证据，结论已回指源记录' : '来源证据'}<small>{evidence.modelId ? `模型：${evidence.modelId}` : '未经过模型改写'}</small></span></div>
-      {evidence.url && <div className="modal-actions"><span>外部来源</span><div><button onClick={() => window.open(evidence.url, '_blank', 'noopener,noreferrer')}><ExternalLink size={16} />打开来源页面</button></div></div>}
     </div>
   );
 }

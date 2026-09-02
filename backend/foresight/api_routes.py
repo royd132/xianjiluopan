@@ -21,12 +21,15 @@ AdminDep = Annotated[None, Depends(require_admin_access)]
 
 @router.get("/health")
 async def health(runtime: RuntimeDep) -> dict:
+    skill_counts = runtime.skills.status_counts()
     return {
         "status": "ok",
         "runtime": "multi-agent",
         "harness": runtime.harness.runtime_version,
         "policy_version": runtime.evolution.active_policy()["version"],
         "extension_count": len(runtime.harness.plugins.list()),
+        "skill_count": skill_counts["total"],
+        "active_skills": skill_counts["active"],
         "supported_modes": sorted(runtime.supported_modes),
         "scenario_capabilities": runtime.scenario_capabilities(),
         "mutation_protection": (
@@ -193,7 +196,9 @@ async def review_card(
 
 @router.get("/evolution")
 async def evolution_status(runtime: RuntimeDep) -> dict:
-    return runtime.evolution.status()
+    status = runtime.evolution.status()
+    status["skills"] = runtime.skills.status()
+    return status
 
 
 @router.post("/evolution/candidates", status_code=201)
@@ -224,3 +229,64 @@ async def rollback_evolution_policy(runtime: RuntimeDep, _admin: AdminDep) -> di
         return runtime.evolution.rollback()
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Skill Bank routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/skills")
+async def skill_list(runtime: RuntimeDep) -> dict:
+    return runtime.skills.status()
+
+
+@router.get("/skills/retrieve")
+async def skill_retrieve(
+    runtime: RuntimeDep,
+    category: str = "pet feeder",
+    market: str = "BR",
+) -> list[dict]:
+    return runtime.skills.retrieve_for_research(category, market)
+
+
+@router.post("/skills/{skill_id}/evaluate", status_code=201)
+async def evaluate_skill(
+    skill_id: str,
+    runtime: RuntimeDep,
+    _admin: AdminDep,
+) -> dict:
+    try:
+        return runtime.skills.evaluate_candidate(skill_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Skill not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/skills/{skill_id}/promote")
+async def promote_skill(
+    skill_id: str,
+    runtime: RuntimeDep,
+    _admin: AdminDep,
+) -> dict:
+    try:
+        skill = runtime.skills.promote(skill_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Skill not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return skill.model_dump(mode="json")
+
+
+@router.post("/skills/{name}/rollback")
+async def rollback_skill(
+    name: str,
+    runtime: RuntimeDep,
+    _admin: AdminDep,
+) -> dict:
+    try:
+        skill = runtime.skills.rollback_skill(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return skill.model_dump(mode="json")

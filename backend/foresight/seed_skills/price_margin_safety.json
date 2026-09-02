@@ -1,0 +1,21 @@
+{
+  "name": "price-margin-safety",
+  "description": "Cross-market margin safety check. When pricing involves FX, platform fees, tariffs and logistics costs, verify that gross margin hypothesis accounts for all cost components.",
+  "version": "0.1.0",
+  "scope_markets": ["*"],
+  "scope_categories": ["*"],
+  "triggers": [
+    {"keyword": "pricing", "weight": 2.0},
+    {"keyword": "定价", "weight": 1.5},
+    {"keyword": "margin", "weight": 1.5},
+    {"keyword": "cost", "weight": 1.0},
+    {"keyword": "FX", "weight": 1.0},
+    {"keyword": "freight", "weight": 1.0},
+    {"keyword": "毛利", "weight": 1.5}
+  ],
+  "inputs": ["observations", "seller_constraints", "supply_signals"],
+  "outputs": ["validation_findings", "failure_conditions"],
+  "evidence_policy": "require_max_evidence_age_days:30",
+  "body": "# Price Margin Safety Check\n\n## Purpose\nEnsure pricing recommendations account for all cost components before publishing. Prevents gross-margin hypotheses from being treated as validated margins.\n\n## Validation Steps\n1. Check that freight signal status is not 'alert'\n2. Verify FX observation is within 30 days\n3. Confirm that card_specific_data includes gross_margin_status field\n4. If gross_margin_status == 'planning_hypothesis', require explicit disclaimer in action_detail\n5. Add failure condition for freight cost exceeding threshold\n\n## Stop Conditions\n- Freight signal status is 'alert'\n- FX observation older than 30 days\n- No cost breakdown provided in card_specific_data",
+  "status": "candidate"
+}

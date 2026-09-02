@@ -90,7 +90,7 @@
 | 决策工作流 | 六 Agent、四卡、证据链、反向条件、人工复核 | 商家共创优化卡片字段与行业模板 |
 | 冷启动数据 | Mock / Hybrid / Real 三模式；BR 主场景真实闭环 | 当前 listing 授权源、MY 原语数据和定时增量 |
 | 实时能力 | SSE 推送任务执行事件；手动市场快照与阈值触发计数 | 后台定时增量与通知投递 |
-| 自进化 | 反馈案例、策略候选、Validation/Holdout、人工激活与回滚 | 合规样本充足后评估 Prompt/Skill 或模型优化 |
+| 自进化 | 反馈案例、策略候选、Validation/Holdout、人工激活与回滚；Skill Bank 候选抽取、BM25 检索、评测与激活 | 合规样本充足后评估模型优化 |
 
 ## 🏗 系统架构
 
@@ -100,6 +100,7 @@ flowchart TB
     API --> RT["Event-driven Multi-Agent Runtime"]
     RT --> BB["CollaborationBlackboard"]
     RT --> H["Agent Harness"]
+    RT --> SB["Skill Bank"]
     H --> T["Trace Writer"]
     H --> M["SQLite Memory"]
     H --> C["Checkpoint Store"]
@@ -111,9 +112,11 @@ flowchart TB
     BB --> A5["Decision Compiler Agent"]
     BB --> A6["Safety & Evaluation Agent"]
 
+    SB -->|"retrieve"| A5
     A6 --> CARDS["四类 Decision Cards"]
     CARDS --> HITL["人工复核"]
     HITL --> FLY["Feedback Flywheel"]
+    HITL --> SB
     FLY --> M
 ```
 
@@ -263,6 +266,11 @@ $env:FORESIGHT_DEMO_READ_ONLY="true"
 | POST | `/api/v1/evolution/candidates` | 生成候选并执行双分区回放 |
 | POST | `/api/v1/evolution/policies/{version}/activate` | 激活已通过门禁的策略 |
 | POST | `/api/v1/evolution/rollback` | 回滚到父策略版本 |
+| GET | `/api/v1/skills` | 查询 Skill Bank 状态与列表 |
+| GET | `/api/v1/skills/retrieve?category=&market=` | 检索匹配当前研究上下文的活跃 Skill |
+| POST | `/api/v1/skills/{id}/evaluate` | 对候选 Skill 执行 Validation/Holdout 回放评测 |
+| POST | `/api/v1/skills/{id}/promote` | 人工激活已通过门禁的 Skill |
+| POST | `/api/v1/skills/{name}/rollback` | 回滚到父版本 Skill |
 | GET | `/api/v1/runtime/extensions` | 查看活动和退役的插件 generation |
 | POST | `/api/v1/runtime/providers/mock/reload` | 热更新内置 Mock Provider，新任务生效 |
 | POST | `/api/v1/runtime/providers/mock/rollback` | 回滚内置 Provider generation |
@@ -387,6 +395,8 @@ npm.cmd run build
 - [评审问答与提交检查表](docs/评审问答与提交检查表.md)
 - [巴西宠物喂食器示例报告](reports/demo.json)
 - [美国咖啡磨跨场景示例报告](reports/demo_us_coffee.json)
+- [墨西哥便携榨汁机跨场景示例报告](reports/demo_mx_blender.json)
+- [美国降噪耳机跨场景示例报告](reports/demo_us_headphones.json)
 
 ## 🗺 路线图与边界
 
@@ -409,6 +419,7 @@ Mock 数据不会冒充真实发现。页面、API 和导出结果均披露数�
 - Layer 1：采纳、驳回、待议等运行时反馈收集；
 - Layer 2：正向/负向案例写入长期记忆，为后续检索与评测提供数据。
 - Layer 3a：版本化策略候选、外置合成 DecisionCard Validation/Holdout 回放、人工激活与父版本回滚。
+- Layer 3b：Skill Bank 最小闭环——从人工反馈中抽取可复用检查模式，经 BM25 检索注入后续任务，通过 Validation/Holdout 回放评测后人工激活，支持版本回滚。
 
 Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的模型演进路线，不会在没有合规样本的情况下伪装成已经完成的能力。
 
@@ -437,6 +448,7 @@ Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的�
 - [x] ECB / UN Comtrade / GSCPI / LSCI / Amazon / Olist 真实 Provider
 - [ ] 定时市场快照、变化检测与阈值告警
 - [x] 可替换 Qwen Model Adapter、结构化输出与源记录 Grounding
+- [x] Skill Bank 最小闭环：候选抽取、BM25 检索、Validation/Holdout 评测、人工激活与回滚
 - [ ] Chroma/Qdrant 双塔检索
 - [ ] 生产任务队列和分布式事件总线
 - [ ] 基于合规反馈样本的 Layer 3 模型演进

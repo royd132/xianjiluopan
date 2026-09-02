@@ -15,6 +15,7 @@ class EventType(str, Enum):
     AGENT_COMPLETED = "agent.completed"
     GATE_PASSED = "gate.passed"
     CHECKPOINT_SAVED = "checkpoint.saved"
+    SKILL_RETRIEVED = "skill.retrieved"
     TASK_COMPLETED = "task.completed"
     TASK_FAILED = "task.failed"
     TASK_CANCELLED = "task.cancelled"

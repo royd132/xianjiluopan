@@ -101,6 +101,7 @@ class DecisionCompilerAgent(BaseAgent):
         if not (evidences and pains and metrics and raw):
             raise RuntimeError("Decision compiler is blocked on evidence, pain points and market metrics")
 
+        retrieved_skills = board.read("retrieved_skills", [])
         scenario = raw["scenario"]
         lead_pain = pains[0]
         anchor = metrics["anchor_price"]
@@ -117,6 +118,12 @@ class DecisionCompilerAgent(BaseAgent):
             "evidences": evidences[:8],
             "collection_timestamp": now,
             "data_sources": sorted({item.source_name for item in evidences}),
+        }
+        skill_context = {
+            "retrieved_skills": [
+                {"skill_id": s["skill_id"], "name": s["name"], "version": s["version"]}
+                for s in retrieved_skills
+            ] if retrieved_skills else [],
         }
         hook = PrivateDomainHook(
             seed_audience=scenario["seed_audience"],
@@ -140,7 +147,7 @@ class DecisionCompilerAgent(BaseAgent):
                         action_on_trigger="recalculate",
                     )
                 ],
-                card_specific_data={"opportunity_score": metrics["blue_ocean_index"], "opportunity_score_basis": scenario.get("opportunity_score_basis", "cold-start-profile"), "opportunity_score_calibration": scenario.get("opportunity_score_calibration", "not_calibrated"), "target_market": request.market.upper(), "differentiation_point": scenario["differentiator"], "primary_pain": lead_pain.label, "mock_scope": scenario["mock_scope"]},
+                card_specific_data={"opportunity_score": metrics["blue_ocean_index"], "opportunity_score_basis": scenario.get("opportunity_score_basis", "cold-start-profile"), "opportunity_score_calibration": scenario.get("opportunity_score_calibration", "not_calibrated"), "target_market": request.market.upper(), "differentiation_point": scenario["differentiator"], "primary_pain": lead_pain.label, "mock_scope": scenario["mock_scope"], **skill_context},
                 **common,
             ),
             DecisionCard(
@@ -170,7 +177,7 @@ class DecisionCompilerAgent(BaseAgent):
                 confidence_score=0.68 if modeled_price else 0.76 if snapshot_price else 0.72 if historical_price else 0.82,
                 private_domain_hook=hook,
                 failure_conditions=[FailureCondition(condition="物流成本侵蚀目标毛利", metric_to_watch=scenario["freight_metric"], threshold=">15%", action_on_trigger="recalculate")],
-                card_specific_data={"anchor_price": anchor, "price_range": [launch_low, launch_high], "gross_margin_pct": scenario["gross_margin_pct"], "gross_margin_status": scenario.get("gross_margin_status", "planning_hypothesis"), "pricing_basis": scenario["proof_metric"], "price_data_mode": scenario.get("price_data_mode", "observed")},
+                card_specific_data={"anchor_price": anchor, "price_range": [launch_low, launch_high], "gross_margin_pct": scenario["gross_margin_pct"], "gross_margin_status": scenario.get("gross_margin_status", "planning_hypothesis"), "pricing_basis": scenario["proof_metric"], "price_data_mode": scenario.get("price_data_mode", "observed"), **skill_context},
                 **common,
             ),
             DecisionCard(

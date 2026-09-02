@@ -394,3 +394,90 @@ def test_runtime_resumes_from_completed_nodes(tmp_path):
         assert restored_nodes == ["collect", "analyze"]
 
     asyncio.run(scenario())
+
+
+def test_checkpoint_idempotency_prevents_duplicate_results(tmp_path):
+    """Running the same request twice returns the same task structure, not duplicates."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result1 = await runtime.run(ResearchRequest(category="pet feeder", market="BR"))
+        result2 = await runtime.run(ResearchRequest(category="pet feeder", market="BR"))
+
+        # Both should succeed independently with separate task IDs
+        assert result1.task_id != result2.task_id
+        assert len(result1.cards) == len(result2.cards) == 4
+        # Both stored in memory
+        assert runtime.get_result(result1.task_id) is not None
+        assert runtime.get_result(result2.task_id) is not None
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_task_records_state_and_allows_resume(tmp_path):
+    async def scenario():
+        workdir = tmp_path / ".foresight"
+        request = ResearchRequest(category="pet feeder", market="BR")
+        runtime = ForesightRuntime(workdir)
+
+        task_id = str(uuid4())
+        trace_id = runtime.harness.new_trace_id()
+        board = CollaborationBlackboard(task_id)
+        runtime.boards[task_id] = board
+        runtime.harness.runs.start_run(
+            task_id,
+            trace_id,
+            request.model_dump(mode="json"),
+            "test-fingerprint",
+        )
+        await runtime._execute_node(task_id, trace_id, request, board, "collect")
+
+        runtime.cancel_task(task_id)
+        assert runtime.harness.runs.get_run(task_id)["status"] == "cancel_requested"
+
+    asyncio.run(scenario())
+
+
+def test_component_snapshot_locks_policy_version_for_running_task(tmp_path):
+    """A running task keeps its original policy even after a new policy is activated."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        first = await runtime.run(ResearchRequest(category="pet feeder", market="BR"))
+
+        runtime.review_card(
+            first.cards[0].card_id,
+            ReviewRequest(status="rejected", reviewer="tester", reason="test", failure_type="weak_evidence"),
+        )
+        evolution_run = runtime.evolution.generate_candidate()
+        runtime.evolution.activate(evolution_run["candidate_version"])
+
+        # First task still uses original policy
+        snapshot = runtime.component_snapshot(first.task_id)
+        assert snapshot["policy"]["version"] == "policy-v1"
+
+        # New task uses updated policy
+        second = await runtime.run(ResearchRequest(category="pet feeder", market="BR"))
+        new_snapshot = runtime.component_snapshot(second.task_id)
+        assert new_snapshot["policy"]["version"] == evolution_run["candidate_version"]
+
+    asyncio.run(scenario())
+
+
+def test_run_events_record_full_node_lifecycle(tmp_path):
+    """Every node transition is recorded in the run ledger."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(ResearchRequest(category="pet feeder", market="BR"))
+
+        events = runtime.run_events(result.task_id)
+        kinds = [e["kind"] for e in events]
+
+        assert "task.start" in kinds
+        assert "task.done" in kinds
+        assert kinds.count("node.started") >= 4
+        assert kinds.count("node.completed") >= 4
+        assert any(e["kind"] == "checkpoint" for e in events)
+
+    asyncio.run(scenario())

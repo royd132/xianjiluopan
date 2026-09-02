@@ -70,6 +70,27 @@ export const foresightClient = {
     return requestJson('/api/v1/evolution/rollback', { method: 'POST' });
   },
 
+  getSkills() {
+    return requestJson('/api/v1/skills');
+  },
+
+  retrieveSkills(category, market) {
+    const params = new URLSearchParams({ category, market });
+    return requestJson(`/api/v1/skills/retrieve?${params.toString()}`);
+  },
+
+  evaluateSkill(skillId) {
+    return requestJson(`/api/v1/skills/${encodeURIComponent(skillId)}/evaluate`, { method: 'POST' });
+  },
+
+  promoteSkill(skillId) {
+    return requestJson(`/api/v1/skills/${encodeURIComponent(skillId)}/promote`, { method: 'POST' });
+  },
+
+  rollbackSkill(name) {
+    return requestJson(`/api/v1/skills/${encodeURIComponent(name)}/rollback`, { method: 'POST' });
+  },
+
   openResearchEvents(taskId) {
     return new EventSource(
       `${API_BASE_URL}/api/v1/research/${encodeURIComponent(taskId)}/events`,
