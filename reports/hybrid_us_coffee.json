@@ -1,0 +1,893 @@
+{
+  "task_id": "089209ba-fd5d-468e-a8fa-f6665c1413ae",
+  "request": {
+    "category": "coffee grinder",
+    "market": "US",
+    "workspace_id": "default",
+    "mode": "hybrid",
+    "languages": [
+      "pt",
+      "en",
+      "es"
+    ]
+  },
+  "cards": [
+    {
+      "card_id": "a5800900-1556-4922-a9bd-2056d777f304",
+      "card_type": "product_selection",
+      "version": 1,
+      "action_title": "优先验证“低残粉 + 刻度复现”的coffee grinder，进入美国市场",
+      "action_detail": "把“耐用性不足”作为第一问题，用静电控制与易清洁粉道构成第二道差异；先验证需求，再开模或备货。",
+      "confidence": "medium",
+      "confidence_score": 0.71,
+      "validity_days": 14,
+      "generated_at": "2026-09-02T09:19:21.461144Z",
+      "expires_at": "2026-09-16T09:19:21.461144Z",
+      "evidences": [
+        {
+          "evidence_id": "7cfef9c8-46f2-4277-bdd2-899f9475e834",
+          "source_name": "ECB reference rates via Frankfurter",
+          "source_type": "fx",
+          "claim": "EUR/USD 近约30个交易日变动 +2.30%",
+          "raw_value": "2026-08-20: 1.1681 USD",
+          "url": "https://frankfurter.dev/",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2026-08-20T00:00:00Z",
+          "observation_period": "2026-07-21 to 2026-08-20",
+          "freshness_class": "live",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.96,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "2026-08-20",
+            "2026-07-21"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "40efd64f-e9d7-4272-b278-ef76dc3c2b20",
+          "source_name": "UN Comtrade local cache · US",
+          "source_type": "customs",
+          "claim": "US 相关 HS 进口额同比 -18.0%",
+          "raw_value": "2025: USD 2,907,521,863",
+          "url": "https://comtradeplus.un.org/",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2025-12-31T00:00:00Z",
+          "observation_period": "2025",
+          "freshness_class": "structural",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.92,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "US:2025"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "5145d249-f271-45a8-b4c7-e40a6e75e387",
+          "source_name": "Federal Reserve Bank of New York · GSCPI",
+          "source_type": "shipping",
+          "claim": "全球供应链压力指数最新为 +0.805 个标准差",
+          "raw_value": "2026-07-31: +0.805",
+          "url": "https://www.newyorkfed.org/research/policy/gscpi",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2026-07-31T00:00:00Z",
+          "observation_period": "2026-07-31",
+          "freshness_class": "recent",
+          "market_scope": "macro",
+          "source_market": "global",
+          "confidence": 0.95,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "2026-07-31"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "cac32a44-5c4d-427f-adbf-bcf8de35e931",
+          "source_name": "World Bank / UNCTAD · LSCI",
+          "source_type": "shipping",
+          "claim": "US 班轮运输连接度同比 -1.2%",
+          "raw_value": "2021: 102.613",
+          "url": "https://data.worldbank.org/indicator/IS.SHP.GCNW.XQ",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2021-12-31T00:00:00Z",
+          "observation_period": "2021",
+          "freshness_class": "structural",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.9,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "US:2021"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "623e5cdc-cd38-43df-932e-2cffe1950981",
+          "source_name": "Amazon Reviews 2023 · coffee_grinder",
+          "source_type": "review",
+          "claim": "1 条入模评论支持“耐用性不足”",
+          "raw_value": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+          "url": "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2023-12-31T00:00:00Z",
+          "observation_period": "Amazon Reviews 2023 snapshot",
+          "freshness_class": "historical",
+          "market_scope": "cross_market",
+          "source_market": "global",
+          "confidence": 0.6,
+          "verified": true,
+          "evidence_kind": "derived",
+          "source_record_ids": [
+            "B09422TF7Z"
+          ],
+          "derivation_method": "llm",
+          "model_id": "qwen3.7-flash"
+        },
+        {
+          "evidence_id": "31f85079-ef46-454c-b777-6b82c954c694",
+          "source_name": "Amazon Reviews 2023 · coffee_grinder",
+          "source_type": "review",
+          "claim": "1 条入模评论支持“漏水或流速异常”",
+          "raw_value": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+          "url": "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2023-12-31T00:00:00Z",
+          "observation_period": "Amazon Reviews 2023 snapshot",
+          "freshness_class": "historical",
+          "market_scope": "cross_market",
+          "source_market": "global",
+          "confidence": 0.6,
+          "verified": true,
+          "evidence_kind": "derived",
+          "source_record_ids": [
+            "B09422TF7Z"
+          ],
+          "derivation_method": "llm",
+          "model_id": "qwen3.7-flash"
+        }
+      ],
+      "private_domain_hook": {
+        "seed_audience": "手冲入门升级、希望每天复现配方的人群",
+        "channel": "Reddit 垂直社区 + 邮件候补名单",
+        "hook_message": "昨天好喝的那杯，今天也能复现",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
+      },
+      "failure_conditions": [
+        {
+          "condition": "现售竞品审计不支持当前表达假设",
+          "metric_to_watch": "20 个现售商品中“残粉重量 + 粒径一致性”证据覆盖率",
+          "threshold": ">=50%",
+          "action_on_trigger": "recalculate"
+        }
+      ],
+      "data_sources": [
+        "Amazon Reviews 2023 · coffee_grinder",
+        "ECB reference rates via Frankfurter",
+        "Federal Reserve Bank of New York · GSCPI",
+        "UN Comtrade local cache · US",
+        "World Bank / UNCTAD · LSCI"
+      ],
+      "collection_timestamp": "2026-09-02T09:19:21.461016Z",
+      "ai_generated": true,
+      "c2pa_signature": null,
+      "human_review_status": "pending",
+      "human_reviewer": null,
+      "human_reviewed_at": null,
+      "card_specific_data": {
+        "opportunity_score": 0.71,
+        "opportunity_score_basis": "grounded_review_pain + UN_Comtrade_growth",
+        "opportunity_score_calibration": "heuristic_v1_not_outcome_calibrated",
+        "target_market": "US",
+        "differentiation_point": "低残粉 + 刻度复现",
+        "primary_pain": "耐用性不足",
+        "mock_scope": "none",
+        "retrieved_skills": []
+      }
+    },
+    {
+      "card_id": "4c80f3e5-5659-48ee-a2a4-f71ec1ebc637",
+      "card_type": "pricing",
+      "version": 1,
+      "action_title": "以 US$67.10 假设锚点做首发 A/B 测试：US$60–70",
+      "action_detail": "当前缺少合规竞品报价源，区间是待验证假设；用“残粉重量 + 粒径一致性”支撑溢价。33% 仅是经营目标，补齐采购、头程、关税、平台佣金和投放成本后才能计算真实毛利。",
+      "confidence": "medium",
+      "confidence_score": 0.68,
+      "validity_days": 14,
+      "generated_at": "2026-09-02T09:19:21.461216Z",
+      "expires_at": "2026-09-16T09:19:21.461216Z",
+      "evidences": [
+        {
+          "evidence_id": "7cfef9c8-46f2-4277-bdd2-899f9475e834",
+          "source_name": "ECB reference rates via Frankfurter",
+          "source_type": "fx",
+          "claim": "EUR/USD 近约30个交易日变动 +2.30%",
+          "raw_value": "2026-08-20: 1.1681 USD",
+          "url": "https://frankfurter.dev/",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2026-08-20T00:00:00Z",
+          "observation_period": "2026-07-21 to 2026-08-20",
+          "freshness_class": "live",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.96,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "2026-08-20",
+            "2026-07-21"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "40efd64f-e9d7-4272-b278-ef76dc3c2b20",
+          "source_name": "UN Comtrade local cache · US",
+          "source_type": "customs",
+          "claim": "US 相关 HS 进口额同比 -18.0%",
+          "raw_value": "2025: USD 2,907,521,863",
+          "url": "https://comtradeplus.un.org/",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2025-12-31T00:00:00Z",
+          "observation_period": "2025",
+          "freshness_class": "structural",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.92,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "US:2025"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "5145d249-f271-45a8-b4c7-e40a6e75e387",
+          "source_name": "Federal Reserve Bank of New York · GSCPI",
+          "source_type": "shipping",
+          "claim": "全球供应链压力指数最新为 +0.805 个标准差",
+          "raw_value": "2026-07-31: +0.805",
+          "url": "https://www.newyorkfed.org/research/policy/gscpi",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2026-07-31T00:00:00Z",
+          "observation_period": "2026-07-31",
+          "freshness_class": "recent",
+          "market_scope": "macro",
+          "source_market": "global",
+          "confidence": 0.95,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "2026-07-31"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "cac32a44-5c4d-427f-adbf-bcf8de35e931",
+          "source_name": "World Bank / UNCTAD · LSCI",
+          "source_type": "shipping",
+          "claim": "US 班轮运输连接度同比 -1.2%",
+          "raw_value": "2021: 102.613",
+          "url": "https://data.worldbank.org/indicator/IS.SHP.GCNW.XQ",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2021-12-31T00:00:00Z",
+          "observation_period": "2021",
+          "freshness_class": "structural",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.9,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "US:2021"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "623e5cdc-cd38-43df-932e-2cffe1950981",
+          "source_name": "Amazon Reviews 2023 · coffee_grinder",
+          "source_type": "review",
+          "claim": "1 条入模评论支持“耐用性不足”",
+          "raw_value": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+          "url": "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2023-12-31T00:00:00Z",
+          "observation_period": "Amazon Reviews 2023 snapshot",
+          "freshness_class": "historical",
+          "market_scope": "cross_market",
+          "source_market": "global",
+          "confidence": 0.6,
+          "verified": true,
+          "evidence_kind": "derived",
+          "source_record_ids": [
+            "B09422TF7Z"
+          ],
+          "derivation_method": "llm",
+          "model_id": "qwen3.7-flash"
+        },
+        {
+          "evidence_id": "31f85079-ef46-454c-b777-6b82c954c694",
+          "source_name": "Amazon Reviews 2023 · coffee_grinder",
+          "source_type": "review",
+          "claim": "1 条入模评论支持“漏水或流速异常”",
+          "raw_value": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+          "url": "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2023-12-31T00:00:00Z",
+          "observation_period": "Amazon Reviews 2023 snapshot",
+          "freshness_class": "historical",
+          "market_scope": "cross_market",
+          "source_market": "global",
+          "confidence": 0.6,
+          "verified": true,
+          "evidence_kind": "derived",
+          "source_record_ids": [
+            "B09422TF7Z"
+          ],
+          "derivation_method": "llm",
+          "model_id": "qwen3.7-flash"
+        }
+      ],
+      "private_domain_hook": {
+        "seed_audience": "手冲入门升级、希望每天复现配方的人群",
+        "channel": "Reddit 垂直社区 + 邮件候补名单",
+        "hook_message": "昨天好喝的那杯，今天也能复现",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
+      },
+      "failure_conditions": [
+        {
+          "condition": "物流成本侵蚀目标毛利",
+          "metric_to_watch": "GSCPI 月度变化",
+          "threshold": ">15%",
+          "action_on_trigger": "recalculate"
+        }
+      ],
+      "data_sources": [
+        "Amazon Reviews 2023 · coffee_grinder",
+        "ECB reference rates via Frankfurter",
+        "Federal Reserve Bank of New York · GSCPI",
+        "UN Comtrade local cache · US",
+        "World Bank / UNCTAD · LSCI"
+      ],
+      "collection_timestamp": "2026-09-02T09:19:21.461016Z",
+      "ai_generated": true,
+      "c2pa_signature": null,
+      "human_review_status": "pending",
+      "human_reviewer": null,
+      "human_reviewed_at": null,
+      "card_specific_data": {
+        "anchor_price": 67.1,
+        "price_range": [
+          60,
+          70
+        ],
+        "gross_margin_pct": 33,
+        "gross_margin_status": "planning_hypothesis",
+        "pricing_basis": "残粉重量 + 粒径一致性",
+        "price_data_mode": "modeled_anchor",
+        "retrieved_skills": []
+      }
+    },
+    {
+      "card_id": "ee79e7ce-e4c5-4471-95cc-e28fca036575",
+      "card_type": "competitive",
+      "version": 1,
+      "action_title": "先审计 20 个现售商品，再验证“残粉重量 + 粒径一致性”是否存在表达空位",
+      "action_detail": "真实评论已支持“耐用性不足”，但当前竞品首屏尚未取得合规数据；先完成人工/授权 listing 审计，再决定是否把“残粉重量 + 粒径一致性”作为主攻表达。",
+      "confidence": "medium",
+      "confidence_score": 0.66,
+      "validity_days": 14,
+      "generated_at": "2026-09-02T09:19:21.461258Z",
+      "expires_at": "2026-09-16T09:19:21.461258Z",
+      "evidences": [
+        {
+          "evidence_id": "7cfef9c8-46f2-4277-bdd2-899f9475e834",
+          "source_name": "ECB reference rates via Frankfurter",
+          "source_type": "fx",
+          "claim": "EUR/USD 近约30个交易日变动 +2.30%",
+          "raw_value": "2026-08-20: 1.1681 USD",
+          "url": "https://frankfurter.dev/",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2026-08-20T00:00:00Z",
+          "observation_period": "2026-07-21 to 2026-08-20",
+          "freshness_class": "live",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.96,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "2026-08-20",
+            "2026-07-21"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "40efd64f-e9d7-4272-b278-ef76dc3c2b20",
+          "source_name": "UN Comtrade local cache · US",
+          "source_type": "customs",
+          "claim": "US 相关 HS 进口额同比 -18.0%",
+          "raw_value": "2025: USD 2,907,521,863",
+          "url": "https://comtradeplus.un.org/",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2025-12-31T00:00:00Z",
+          "observation_period": "2025",
+          "freshness_class": "structural",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.92,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "US:2025"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "5145d249-f271-45a8-b4c7-e40a6e75e387",
+          "source_name": "Federal Reserve Bank of New York · GSCPI",
+          "source_type": "shipping",
+          "claim": "全球供应链压力指数最新为 +0.805 个标准差",
+          "raw_value": "2026-07-31: +0.805",
+          "url": "https://www.newyorkfed.org/research/policy/gscpi",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2026-07-31T00:00:00Z",
+          "observation_period": "2026-07-31",
+          "freshness_class": "recent",
+          "market_scope": "macro",
+          "source_market": "global",
+          "confidence": 0.95,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "2026-07-31"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "cac32a44-5c4d-427f-adbf-bcf8de35e931",
+          "source_name": "World Bank / UNCTAD · LSCI",
+          "source_type": "shipping",
+          "claim": "US 班轮运输连接度同比 -1.2%",
+          "raw_value": "2021: 102.613",
+          "url": "https://data.worldbank.org/indicator/IS.SHP.GCNW.XQ",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2021-12-31T00:00:00Z",
+          "observation_period": "2021",
+          "freshness_class": "structural",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.9,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "US:2021"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "623e5cdc-cd38-43df-932e-2cffe1950981",
+          "source_name": "Amazon Reviews 2023 · coffee_grinder",
+          "source_type": "review",
+          "claim": "1 条入模评论支持“耐用性不足”",
+          "raw_value": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+          "url": "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2023-12-31T00:00:00Z",
+          "observation_period": "Amazon Reviews 2023 snapshot",
+          "freshness_class": "historical",
+          "market_scope": "cross_market",
+          "source_market": "global",
+          "confidence": 0.6,
+          "verified": true,
+          "evidence_kind": "derived",
+          "source_record_ids": [
+            "B09422TF7Z"
+          ],
+          "derivation_method": "llm",
+          "model_id": "qwen3.7-flash"
+        },
+        {
+          "evidence_id": "31f85079-ef46-454c-b777-6b82c954c694",
+          "source_name": "Amazon Reviews 2023 · coffee_grinder",
+          "source_type": "review",
+          "claim": "1 条入模评论支持“漏水或流速异常”",
+          "raw_value": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+          "url": "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2023-12-31T00:00:00Z",
+          "observation_period": "Amazon Reviews 2023 snapshot",
+          "freshness_class": "historical",
+          "market_scope": "cross_market",
+          "source_market": "global",
+          "confidence": 0.6,
+          "verified": true,
+          "evidence_kind": "derived",
+          "source_record_ids": [
+            "B09422TF7Z"
+          ],
+          "derivation_method": "llm",
+          "model_id": "qwen3.7-flash"
+        }
+      ],
+      "private_domain_hook": {
+        "seed_audience": "手冲入门升级、希望每天复现配方的人群",
+        "channel": "Reddit 垂直社区 + 邮件候补名单",
+        "hook_message": "昨天好喝的那杯，今天也能复现",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
+      },
+      "failure_conditions": [
+        {
+          "condition": "竞品开始普遍公开同类证据",
+          "metric_to_watch": "Top 10 “残粉重量 + 粒径一致性”证据覆盖率",
+          "threshold": ">=50%",
+          "action_on_trigger": "watch"
+        }
+      ],
+      "data_sources": [
+        "Amazon Reviews 2023 · coffee_grinder",
+        "ECB reference rates via Frankfurter",
+        "Federal Reserve Bank of New York · GSCPI",
+        "UN Comtrade local cache · US",
+        "World Bank / UNCTAD · LSCI"
+      ],
+      "collection_timestamp": "2026-09-02T09:19:21.461016Z",
+      "ai_generated": true,
+      "c2pa_signature": null,
+      "human_review_status": "pending",
+      "human_reviewer": null,
+      "human_reviewed_at": null,
+      "card_specific_data": {
+        "copy": "昨天好喝的那杯，今天也能复现",
+        "proof_metric": "残粉重量 + 粒径一致性",
+        "expression_gap_pct": null,
+        "listing_audit_required": true,
+        "defense_actions": [
+          "公开测试方法",
+          "强化静电控制与易清洁粉道",
+          "保留原语用户证言"
+        ]
+      }
+    },
+    {
+      "card_id": "a82a6578-0053-480e-ad03-8d73acb9ba76",
+      "card_type": "private_domain",
+      "version": 1,
+      "action_title": "先在Reddit、Facebook Group 与垂直论坛招募 30 个种子用户完成意向验证",
+      "action_detail": "针对“手冲入门升级、希望每天复现配方的人群”投放问题对比素材，用“昨天好喝的那杯，今天也能复现”测试购买意向；达到阈值后再决定首批备货。",
+      "confidence": "medium",
+      "confidence_score": 0.62,
+      "validity_days": 14,
+      "generated_at": "2026-09-02T09:19:21.461280Z",
+      "expires_at": "2026-09-16T09:19:21.461280Z",
+      "evidences": [
+        {
+          "evidence_id": "7cfef9c8-46f2-4277-bdd2-899f9475e834",
+          "source_name": "ECB reference rates via Frankfurter",
+          "source_type": "fx",
+          "claim": "EUR/USD 近约30个交易日变动 +2.30%",
+          "raw_value": "2026-08-20: 1.1681 USD",
+          "url": "https://frankfurter.dev/",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2026-08-20T00:00:00Z",
+          "observation_period": "2026-07-21 to 2026-08-20",
+          "freshness_class": "live",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.96,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "2026-08-20",
+            "2026-07-21"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "40efd64f-e9d7-4272-b278-ef76dc3c2b20",
+          "source_name": "UN Comtrade local cache · US",
+          "source_type": "customs",
+          "claim": "US 相关 HS 进口额同比 -18.0%",
+          "raw_value": "2025: USD 2,907,521,863",
+          "url": "https://comtradeplus.un.org/",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2025-12-31T00:00:00Z",
+          "observation_period": "2025",
+          "freshness_class": "structural",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.92,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "US:2025"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "5145d249-f271-45a8-b4c7-e40a6e75e387",
+          "source_name": "Federal Reserve Bank of New York · GSCPI",
+          "source_type": "shipping",
+          "claim": "全球供应链压力指数最新为 +0.805 个标准差",
+          "raw_value": "2026-07-31: +0.805",
+          "url": "https://www.newyorkfed.org/research/policy/gscpi",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2026-07-31T00:00:00Z",
+          "observation_period": "2026-07-31",
+          "freshness_class": "recent",
+          "market_scope": "macro",
+          "source_market": "global",
+          "confidence": 0.95,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "2026-07-31"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "cac32a44-5c4d-427f-adbf-bcf8de35e931",
+          "source_name": "World Bank / UNCTAD · LSCI",
+          "source_type": "shipping",
+          "claim": "US 班轮运输连接度同比 -1.2%",
+          "raw_value": "2021: 102.613",
+          "url": "https://data.worldbank.org/indicator/IS.SHP.GCNW.XQ",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2021-12-31T00:00:00Z",
+          "observation_period": "2021",
+          "freshness_class": "structural",
+          "market_scope": "target_market",
+          "source_market": "US",
+          "confidence": 0.9,
+          "verified": true,
+          "evidence_kind": "source",
+          "source_record_ids": [
+            "US:2021"
+          ],
+          "derivation_method": null,
+          "model_id": null
+        },
+        {
+          "evidence_id": "623e5cdc-cd38-43df-932e-2cffe1950981",
+          "source_name": "Amazon Reviews 2023 · coffee_grinder",
+          "source_type": "review",
+          "claim": "1 条入模评论支持“耐用性不足”",
+          "raw_value": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+          "url": "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2023-12-31T00:00:00Z",
+          "observation_period": "Amazon Reviews 2023 snapshot",
+          "freshness_class": "historical",
+          "market_scope": "cross_market",
+          "source_market": "global",
+          "confidence": 0.6,
+          "verified": true,
+          "evidence_kind": "derived",
+          "source_record_ids": [
+            "B09422TF7Z"
+          ],
+          "derivation_method": "llm",
+          "model_id": "qwen3.7-flash"
+        },
+        {
+          "evidence_id": "31f85079-ef46-454c-b777-6b82c954c694",
+          "source_name": "Amazon Reviews 2023 · coffee_grinder",
+          "source_type": "review",
+          "claim": "1 条入模评论支持“漏水或流速异常”",
+          "raw_value": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+          "url": "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
+          "language": "en",
+          "collected_at": "2026-09-02T09:19:21.296322Z",
+          "observed_at": "2023-12-31T00:00:00Z",
+          "observation_period": "Amazon Reviews 2023 snapshot",
+          "freshness_class": "historical",
+          "market_scope": "cross_market",
+          "source_market": "global",
+          "confidence": 0.6,
+          "verified": true,
+          "evidence_kind": "derived",
+          "source_record_ids": [
+            "B09422TF7Z"
+          ],
+          "derivation_method": "llm",
+          "model_id": "qwen3.7-flash"
+        }
+      ],
+      "private_domain_hook": {
+        "seed_audience": "手冲入门升级、希望每天复现配方的人群",
+        "channel": "Reddit 垂直社区 + 邮件候补名单",
+        "hook_message": "昨天好喝的那杯，今天也能复现",
+        "expected_conversion_hint": "先完成 30 份意向测试与 5 次深访，再决定首批备货"
+      },
+      "failure_conditions": [
+        {
+          "condition": "种子测试未形成有效兴趣",
+          "metric_to_watch": "落地页购买意向率",
+          "threshold": "<5%",
+          "action_on_trigger": "abort"
+        }
+      ],
+      "data_sources": [
+        "Amazon Reviews 2023 · coffee_grinder",
+        "ECB reference rates via Frankfurter",
+        "Federal Reserve Bank of New York · GSCPI",
+        "UN Comtrade local cache · US",
+        "World Bank / UNCTAD · LSCI"
+      ],
+      "collection_timestamp": "2026-09-02T09:19:21.461016Z",
+      "ai_generated": true,
+      "c2pa_signature": null,
+      "human_review_status": "pending",
+      "human_reviewer": null,
+      "human_reviewed_at": null,
+      "card_specific_data": {
+        "gathering_places": [
+          "Reddit、Facebook Group 与垂直论坛",
+          "Amazon US"
+        ],
+        "repurchase_signal_strength": "unverified",
+        "repurchase_signal_status": "not_measured",
+        "validation_sample": 30
+      }
+    }
+  ],
+  "pain_points": [
+    {
+      "pain_type": "durability",
+      "label": "耐用性不足",
+      "mentions": 1,
+      "sentiment_intensity": 0.6,
+      "opportunity_index": 1.0,
+      "hidden_pain": true,
+      "languages": [
+        "en"
+      ],
+      "sample_original": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+      "sample_translation": "优化核心组件与品控，解决使用一周后快速失效的问题。",
+      "source": "Amazon Reviews 2023",
+      "source_market": "global",
+      "market_scope": "cross_market",
+      "extracted_by": "llm",
+      "verification": {
+        "model": "qwen3.7-flash",
+        "adapter_version": "qwen-grounded-reviews-v1",
+        "review_ids": [
+          "r001"
+        ],
+        "source_record_ids": [
+          "B09422TF7Z"
+        ],
+        "review_count_sampled": 3,
+        "prompt_sha256": "01456dc45e0ea7a2ed967ae8e4c83a5e4e88a0043ec1d161cb30ba55b428adce"
+      }
+    },
+    {
+      "pain_type": "leakage",
+      "label": "漏水或流速异常",
+      "mentions": 1,
+      "sentiment_intensity": 0.6,
+      "opportunity_index": 1.0,
+      "hidden_pain": true,
+      "languages": [
+        "en"
+      ],
+      "sample_original": "Great invention for a single cup I loved it that you could grind coffee but it only worked for one week, it started making only 1/2 of a cup but I wondered where the water went, it dripped so slow that it took 10 minutes to make make 1/2 cu",
+      "sample_translation": "改进水路密封与出水结构，解决滴水缓慢及水量不明流失的问题。",
+      "source": "Amazon Reviews 2023",
+      "source_market": "global",
+      "market_scope": "cross_market",
+      "extracted_by": "llm",
+      "verification": {
+        "model": "qwen3.7-flash",
+        "adapter_version": "qwen-grounded-reviews-v1",
+        "review_ids": [
+          "r001"
+        ],
+        "source_record_ids": [
+          "B09422TF7Z"
+        ],
+        "review_count_sampled": 3,
+        "prompt_sha256": "01456dc45e0ea7a2ed967ae8e4c83a5e4e88a0043ec1d161cb30ba55b428adce"
+      }
+    }
+  ],
+  "supply_signals": [
+    {
+      "signal_type": "customs",
+      "label": "US HS8509 进口额",
+      "current_value": 2907521863.0,
+      "unit": "USD",
+      "change_pct": -18.0,
+      "period": "YoY (2025)",
+      "status": "watch",
+      "source": "UN Comtrade local cache"
+    },
+    {
+      "signal_type": "freight",
+      "label": "全球供应链压力指数 GSCPI",
+      "current_value": 0.805,
+      "unit": "标准差",
+      "change_pct": -38.0,
+      "period": "MoM",
+      "status": "watch",
+      "source": "Federal Reserve Bank of New York"
+    },
+    {
+      "signal_type": "fx",
+      "label": "EUR/USD",
+      "current_value": 1.1681,
+      "unit": "USD",
+      "change_pct": 2.3,
+      "period": "30d",
+      "status": "stable",
+      "source": "ECB via Frankfurter"
+    },
+    {
+      "signal_type": "shipping_connectivity",
+      "label": "US 班轮运输连接度",
+      "current_value": 102.613,
+      "unit": "指数",
+      "change_pct": -1.2,
+      "period": "2021 YoY",
+      "status": "watch",
+      "source": "World Bank / UNCTAD LSCI"
+    }
+  ],
+  "evidence_count": 6,
+  "agents_completed": [
+    "collector",
+    "review-analyzer",
+    "market-analyzer",
+    "supply-chain-analyzer",
+    "decision-compiler",
+    "safety-evaluator"
+  ],
+  "mode": "hybrid",
+  "started_at": "2026-09-02T09:19:01.149699Z",
+  "completed_at": "2026-09-02T09:19:21.500362Z",
+  "trace_id": "25cdb436-0b13-4284-8f65-1bcd4489c12d"
+}
