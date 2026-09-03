@@ -623,6 +623,55 @@ def test_contract_zero_intent_rate_stops(tmp_path):
     asyncio.run(scenario())
 
 
+def test_contract_small_sample_no_stop(tmp_path):
+    """Below stop_sample_count, even 0% intent → VALIDATE (insufficient evidence)."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+
+        # 5 people, 0% intent → too few to abort → VALIDATE
+        contract = runtime.submit_validation_result(
+            result.task_id,
+            ValidationResultRequest(
+                actual_spend=500,
+                metrics={"sample_count": 5, "intent_rate": 0.0},
+                outcome="inconclusive",
+            ),
+        )
+        assert contract.verdict == DecisionVerdict.VALIDATE
+        assert contract.system_verdict == DecisionVerdict.VALIDATE
+
+    asyncio.run(scenario())
+
+
+def test_contract_outcome_cannot_override_verdict(tmp_path):
+    """Regression: outcome='positive' must NOT override a STOP system verdict."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+
+        # Metrics trigger STOP, but user says outcome="positive"
+        contract = runtime.submit_validation_result(
+            result.task_id,
+            ValidationResultRequest(
+                actual_spend=1500,
+                metrics={"sample_count": 35, "intent_rate": 0.03},
+                outcome="positive",  # must be ignored for verdict
+            ),
+        )
+        assert contract.verdict == DecisionVerdict.STOP
+        assert contract.system_verdict == DecisionVerdict.STOP
+        assert contract.human_override is None
+
+    asyncio.run(scenario())
+
+
 def test_contract_human_override_recorded(tmp_path):
     """User can override system verdict via /override endpoint.
     Override does NOT modify evidence coverage.

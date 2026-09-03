@@ -196,8 +196,10 @@ flowchart TB
     CONTRACT --> VERDICT{"GO / VALIDATE / STOP"}
     VERDICT -->|VALIDATE| EXP["最低成本实验设计"]
     EXP --> VR["真实验证结果回填"]
-    VR --> GATES["Promotion Gates"]
-    GATES --> VERDICT
+    VR --> GATES["Promotion Gates + Stop Gates"]
+    GATES -->|全过| GO["GO"]
+    GATES -->|触发否决| STOP["STOP"]
+    GATES -->|灰区| VALIDATE["VALIDATE"]
     A6 --> CARDS
     CONTRACT --> HITL["人工复核"]
     HITL --> FLY["Feedback Flywheel"]
@@ -220,7 +222,7 @@ flowchart TB
         ↓
 ⑥ SSE 推送进度，React 首先展示 Go / Validate / Stop 决策契约
         ↓
-⑦ 若 VALIDATE → 用户执行最小验证 → 提交指标 → 系统按 Promotion Gates 重判
+⑦ 若 VALIDATE → 用户执行最小验证 → 提交指标 → Promotion Gates 全过则 GO，Stop Gates 触发则 STOP，灰区继续 VALIDATE
         ↓
 ⑧ 人工复核写入正向/负向案例记忆
 ```

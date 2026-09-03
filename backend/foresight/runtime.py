@@ -687,11 +687,17 @@ class ForesightRuntime:
         intent_raw = metrics.get("intent_rate")
         intent_submitted = intent_raw is not None
 
-        if intent_submitted and intent <= criteria.stop_intent_rate:
-            stop_triggered.append(f"意向率 {intent:.0%} ≤ 否决线 {criteria.stop_intent_rate:.0%}")
-
-        if intent_submitted and sample > 0 and sample <= criteria.stop_sample_count and intent <= criteria.stop_intent_rate:
-            stop_triggered.append(f"样本量 {sample} ≤ {criteria.stop_sample_count} 且意向率不达标")
+        # Only STOP when sample is large enough to be meaningful.
+        # Below stop_sample_count → VALIDATE (insufficient evidence to abort).
+        if (
+            intent_submitted
+            and sample >= criteria.stop_sample_count
+            and intent <= criteria.stop_intent_rate
+        ):
+            stop_triggered.append(
+                f"意向率 {intent:.0%} ≤ 否决线 {criteria.stop_intent_rate:.0%} "
+                f"（样本 {sample} ≥ {criteria.stop_sample_count}）"
+            )
 
         # --- Three-state verdict ---
         if not promotion_failed and promotion_passed:
@@ -701,26 +707,20 @@ class ForesightRuntime:
         else:
             system_verdict = DecisionVerdict.VALIDATE
 
-        # --- Human override ---
-        human_override = None
-        if result.outcome == "positive" and system_verdict != DecisionVerdict.GO:
-            human_override = DecisionVerdict.GO
-        elif result.outcome == "negative" and system_verdict != DecisionVerdict.STOP:
-            human_override = DecisionVerdict.STOP
+        # --- Apply verdict (system_verdict is final; no hidden override) ---
+        # outcome is informational only — it never changes the verdict.
+        # To override, use POST /contracts/{id}/override.
 
-        new_verdict = human_override if human_override else system_verdict
-
-        # --- Apply verdict ---
-        if new_verdict == DecisionVerdict.GO:
+        if system_verdict == DecisionVerdict.GO:
             contract.allowed_investment = contract.planned_investment
-        elif new_verdict == DecisionVerdict.STOP:
+        elif system_verdict == DecisionVerdict.STOP:
             contract.allowed_investment = 0
 
         contract.system_verdict = system_verdict
-        contract.verdict = new_verdict
-        contract.human_override = human_override
+        contract.verdict = system_verdict
         contract.core_basis.append(
-            f"验证结果：实际花费 ¥{result.actual_spend:.0f}"
+            f"验证结果：实际花费 ¥{result.actual_spend:.0f}，"
+            f"实验结论={result.outcome}"
         )
         if promotion_passed:
             contract.core_basis.append("晋级门通过：" + "；".join(promotion_passed))
@@ -728,11 +728,6 @@ class ForesightRuntime:
             contract.core_basis.append("晋级门未通过：" + "；".join(promotion_failed))
         if stop_triggered:
             contract.core_basis.append("否决条件触发：" + "；".join(stop_triggered))
-        if human_override:
-            contract.core_basis.append(
-                f"人工覆盖：系统判定={system_verdict.value}，"
-                f"人工覆盖={human_override.value}（通过 /override 端点可记录详细理由）"
-            )
 
         # --- Evidence coverage: "验证完成" = experiment was conducted ---
         # This reflects whether real validation data exists, NOT whether it passed.
@@ -758,9 +753,8 @@ class ForesightRuntime:
         if run:
             payload = {
                 "system_verdict": system_verdict.value,
-                "verdict": new_verdict.value,
                 "actual_spend": result.actual_spend,
-                "human_override": human_override.value if human_override else None,
+                "outcome": result.outcome,
             }
             self.harness.trace.write(run["trace_id"], task_id, "validation.submitted", payload)
             self.harness.runs.record_event(task_id, run["trace_id"], "validation.submitted", payload, "validation")

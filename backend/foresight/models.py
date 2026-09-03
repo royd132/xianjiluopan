@@ -268,8 +268,11 @@ class ValidationResultRequest(BaseModel):
 
 
 class OverrideRequest(BaseModel):
-    """Human override of a system verdict. Separate from validation submission."""
+    """Human override of a system verdict. Separate from validation submission.
+    Only GO and STOP are allowed — overriding to VALIDATE would create
+    inconsistent allowed_investment state.
+    """
 
-    target_verdict: DecisionVerdict
+    target_verdict: Literal[DecisionVerdict.GO, DecisionVerdict.STOP]
     reason: str = Field(min_length=1, description="Why the human disagrees with the system verdict")
     operator: str = Field(default="demo-user", min_length=1)
