@@ -626,9 +626,14 @@ class ForesightRuntime:
     ) -> DecisionContract:
         """Accept actual validation data and re-evaluate the decision contract.
 
-        Verdict is determined by structured metrics against promotion_criteria,
-        not by the user-supplied outcome string. human_override is recorded
-        separately when the user explicitly disagrees with the system verdict.
+        Three-state verdict logic:
+          - All promotion gates pass → GO
+          - Any stop gate triggers → STOP
+          - Gray zone (gates not met but no stop triggered) → VALIDATE
+
+        Evidence coverage "最小验证是否完成？" reflects whether the experiment
+        was actually conducted (has real metrics), NOT whether results passed.
+        Human override does NOT modify evidence coverage.
         """
         stored = self.get_result(task_id)
         if not stored or not stored.contract:
@@ -644,39 +649,49 @@ class ForesightRuntime:
         metrics = result.metrics
         criteria = contract.promotion_criteria
 
-        # --- Metrics-driven verdict ---
-        gates_passed: list[str] = []
-        gates_failed: list[str] = []
+        # --- Promotion gates (GO threshold) ---
+        promotion_passed: list[str] = []
+        promotion_failed: list[str] = []
 
         sample = int(metrics.get("sample_count", 0))
         if sample >= criteria.min_sample_count:
-            gates_passed.append(f"样本量 {sample} ≥ {criteria.min_sample_count}")
+            promotion_passed.append(f"样本量 {sample} ≥ {criteria.min_sample_count}")
         else:
-            gates_failed.append(f"样本量 {sample} < {criteria.min_sample_count}")
+            promotion_failed.append(f"样本量 {sample} < {criteria.min_sample_count}")
 
         intent = float(metrics.get("intent_rate", 0))
         if intent >= criteria.min_intent_rate:
-            gates_passed.append(f"意向率 {intent:.0%} ≥ {criteria.min_intent_rate:.0%}")
+            promotion_passed.append(f"意向率 {intent:.0%} ≥ {criteria.min_intent_rate:.0%}")
         else:
-            gates_failed.append(f"意向率 {intent:.0%} < {criteria.min_intent_rate:.0%}")
+            promotion_failed.append(f"意向率 {intent:.0%} < {criteria.min_intent_rate:.0%}")
 
         if criteria.max_cpc is not None:
             cpc = float(metrics.get("cpc", 0))
             if cpc <= criteria.max_cpc:
-                gates_passed.append(f"CPC ¥{cpc:.2f} ≤ ¥{criteria.max_cpc:.2f}")
+                promotion_passed.append(f"CPC ¥{cpc:.2f} ≤ ¥{criteria.max_cpc:.2f}")
             else:
-                gates_failed.append(f"CPC ¥{cpc:.2f} > ¥{criteria.max_cpc:.2f}")
+                promotion_failed.append(f"CPC ¥{cpc:.2f} > ¥{criteria.max_cpc:.2f}")
 
         if criteria.min_pain_confirmation_rate is not None:
             pain_rate = float(metrics.get("pain_confirmation_rate", 0))
             if pain_rate >= criteria.min_pain_confirmation_rate:
-                gates_passed.append(f"痛点确认率 {pain_rate:.0%} ≥ {criteria.min_pain_confirmation_rate:.0%}")
+                promotion_passed.append(f"痛点确认率 {pain_rate:.0%} ≥ {criteria.min_pain_confirmation_rate:.0%}")
             else:
-                gates_failed.append(f"痛点确认率 {pain_rate:.0%} < {criteria.min_pain_confirmation_rate:.0%}")
+                promotion_failed.append(f"痛点确认率 {pain_rate:.0%} < {criteria.min_pain_confirmation_rate:.0%}")
 
-        if not gates_failed and gates_passed:
+        # --- Stop gates (abort threshold) ---
+        stop_triggered: list[str] = []
+
+        if intent > 0 and intent <= criteria.stop_intent_rate:
+            stop_triggered.append(f"意向率 {intent:.0%} ≤ 否决线 {criteria.stop_intent_rate:.0%}")
+
+        if sample > 0 and sample <= criteria.stop_sample_count and intent <= criteria.stop_intent_rate:
+            stop_triggered.append(f"样本量 {sample} ≤ {criteria.stop_sample_count} 且意向率不达标")
+
+        # --- Three-state verdict ---
+        if not promotion_failed and promotion_passed:
             system_verdict = DecisionVerdict.GO
-        elif gates_failed:
+        elif stop_triggered:
             system_verdict = DecisionVerdict.STOP
         else:
             system_verdict = DecisionVerdict.VALIDATE
@@ -699,24 +714,38 @@ class ForesightRuntime:
         contract.system_verdict = system_verdict
         contract.verdict = new_verdict
         contract.human_override = human_override
+        if human_override:
+            contract.override_reason = result.override_reason
+            contract.override_by = result.override_by or "demo-user"
+            contract.override_at = datetime.now(timezone.utc)
         contract.core_basis.append(
             f"验证结果：实际花费 ¥{result.actual_spend:.0f}"
         )
-        if gates_passed:
-            contract.core_basis.append("晋级门通过：" + "；".join(gates_passed))
-        if gates_failed:
-            contract.core_basis.append("晋级门未通过：" + "；".join(gates_failed))
+        if promotion_passed:
+            contract.core_basis.append("晋级门通过：" + "；".join(promotion_passed))
+        if promotion_failed:
+            contract.core_basis.append("晋级门未通过：" + "；".join(promotion_failed))
+        if stop_triggered:
+            contract.core_basis.append("否决条件触发：" + "；".join(stop_triggered))
         if human_override:
             contract.core_basis.append(
                 f"人工覆盖：系统判定={system_verdict.value}，"
                 f"人工覆盖={human_override.value}"
+                + (f"，理由={result.override_reason}" if result.override_reason else "")
             )
 
-        # Update the "validation done" checkpoint
+        # --- Evidence coverage: "验证完成" = experiment was conducted ---
+        # This reflects whether real validation data exists, NOT whether it passed.
+        # Override must NOT modify this.
+        has_real_metrics = bool(metrics) and sample > 0
         for cp in contract.evidence_coverage.checkpoints:
-            if cp.question == "最小验证是否完成？":
-                cp.status = "pass" if new_verdict == DecisionVerdict.GO else "gap"
-                cp.basis = f"验证结果：{new_verdict.value}，花费 ¥{result.actual_spend:.0f}"
+            if "验证" in cp.question:
+                cp.status = "pass" if has_real_metrics else "gap"
+                cp.basis = (
+                    f"验证实验已完成（{sample} 人），结果={system_verdict.value}，花费 ¥{result.actual_spend:.0f}"
+                    if has_real_metrics
+                    else "验证实验尚未执行"
+                )
                 break
 
         # Persist
@@ -727,7 +756,12 @@ class ForesightRuntime:
         # Trace
         run = self.harness.runs.get_run(task_id)
         if run:
-            payload = {"verdict": new_verdict.value, "actual_spend": result.actual_spend}
+            payload = {
+                "system_verdict": system_verdict.value,
+                "verdict": new_verdict.value,
+                "actual_spend": result.actual_spend,
+                "human_override": human_override.value if human_override else None,
+            }
             self.harness.trace.write(run["trace_id"], task_id, "validation.submitted", payload)
             self.harness.runs.record_event(task_id, run["trace_id"], "validation.submitted", payload, "validation")
 

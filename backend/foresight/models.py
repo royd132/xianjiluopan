@@ -211,12 +211,21 @@ class EvidenceCoverage(BaseModel):
 
 
 class ValidationCriteria(BaseModel):
-    """Structured promotion gates for VALIDATE → GO transition."""
+    """Structured promotion gates (GO threshold) and stop gates (abort threshold).
+
+    Three-state logic:
+      - All promotion gates pass → GO
+      - Any stop gate triggers → STOP
+      - Otherwise (gray zone) → VALIDATE
+    """
 
     min_sample_count: int = 30
     min_intent_rate: float = 0.12
     max_cpc: float | None = None
     min_pain_confirmation_rate: float | None = None
+    # Stop gates — explicit abort thresholds (lower than promotion gates)
+    stop_intent_rate: float = 0.05
+    stop_sample_count: int = 10
 
 
 class DecisionContract(BaseModel):
@@ -244,6 +253,9 @@ class DecisionContract(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     system_verdict: DecisionVerdict | None = None
     human_override: DecisionVerdict | None = None
+    override_reason: str | None = None
+    override_by: str | None = None
+    override_at: datetime | None = None
 
 
 class ValidationResultRequest(BaseModel):
@@ -253,3 +265,5 @@ class ValidationResultRequest(BaseModel):
     metrics: dict[str, Any] = Field(default_factory=dict, description="e.g. click_count, intent_rate, cpc, sample_feedback_count")
     outcome: Literal["positive", "negative", "inconclusive"] = "inconclusive"
     notes: str | None = None
+    override_reason: str | None = None
+    override_by: str | None = None

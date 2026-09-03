@@ -348,6 +348,7 @@ function App() {
       market: selectedReportMarket,
       generatedAt: reportGeneratedAt,
       dataMode: reportMode,
+      decisionContract: decisionContract || null,
       cards: decisionCards,
       evidence: reportEvidence,
       painPoints: insightPainPoints,
@@ -607,12 +608,15 @@ function App() {
                   <span style={{ fontSize: 13, color: '#6b7280' }}>是否接受系统判定？</span>
                   <button className="secondary-button" style={{ fontSize: 13 }} onClick={() => setToast('已接受系统判定 STOP')}>接受 STOP</button>
                   <button className="secondary-button" style={{ fontSize: 13, borderColor: '#f59e0b', color: '#92400e' }} onClick={async () => {
-                    if (!window.confirm('人工覆盖不会改变 system_verdict，将记录 override。确认覆盖为 GO？')) return;
+                    const reason = window.prompt('请输入覆盖理由（将记录审计）：');
+                    if (!reason) return;
                     try {
                       const contract = await foresightClient.submitValidationResult(currentTaskId, {
                         actual_spend: 0,
                         metrics: {},
                         outcome: 'positive',
+                        override_reason: reason,
+                        override_by: 'demo-user',
                       });
                       setDecisionContract(contract);
                       setToast('已人工覆盖为 GO（system_verdict 保留为 STOP）');

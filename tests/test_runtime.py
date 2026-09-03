@@ -536,7 +536,7 @@ def test_contract_metrics_pass_promotes_to_go(tmp_path):
 
 
 def test_contract_metrics_fail_stops(tmp_path):
-    """When validation metrics fail promotion gates, verdict becomes STOP."""
+    """When stop gates trigger (intent ≤ 5%), verdict becomes STOP."""
 
     async def scenario():
         runtime = ForesightRuntime(tmp_path / ".foresight")
@@ -548,19 +548,24 @@ def test_contract_metrics_fail_stops(tmp_path):
             result.task_id,
             ValidationResultRequest(
                 actual_spend=1500,
-                metrics={"sample_count": 10, "intent_rate": 0.03, "pain_confirmation_rate": 0.10},
+                metrics={"sample_count": 35, "intent_rate": 0.03, "pain_confirmation_rate": 0.10},
                 outcome="negative",
             ),
         )
         assert contract.verdict == DecisionVerdict.STOP
         assert contract.system_verdict == DecisionVerdict.STOP
         assert contract.allowed_investment == 0
+        # Evidence coverage: validation was done, so checkpoint = pass
+        validation_cp = next(
+            cp for cp in contract.evidence_coverage.checkpoints if "验证" in cp.question
+        )
+        assert validation_cp.status == "pass"
 
     asyncio.run(scenario())
 
 
-def test_contract_human_override_recorded(tmp_path):
-    """User can override system verdict, but both are recorded separately."""
+def test_contract_gray_zone_returns_validate(tmp_path):
+    """Partial metrics (not GO, but not bad enough for STOP) → VALIDATE."""
 
     async def scenario():
         runtime = ForesightRuntime(tmp_path / ".foresight")
@@ -568,18 +573,61 @@ def test_contract_human_override_recorded(tmp_path):
             ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
         )
 
-        # Metrics fail → system says STOP, but user overrides to GO
+        # Sample 29 (need 30), intent 10% (need 12% but above 5% stop)
+        contract = runtime.submit_validation_result(
+            result.task_id,
+            ValidationResultRequest(
+                actual_spend=1800,
+                metrics={"sample_count": 29, "intent_rate": 0.10, "pain_confirmation_rate": 0.40},
+                outcome="inconclusive",
+            ),
+        )
+        assert contract.verdict == DecisionVerdict.VALIDATE
+        assert contract.system_verdict == DecisionVerdict.VALIDATE
+        assert contract.human_override is None
+        # Evidence coverage: validation was done
+        validation_cp = next(
+            cp for cp in contract.evidence_coverage.checkpoints if "验证" in cp.question
+        )
+        assert validation_cp.status == "pass"
+
+    asyncio.run(scenario())
+
+
+def test_contract_human_override_recorded(tmp_path):
+    """User can override system verdict, but both are recorded separately.
+    Override does NOT modify evidence coverage.
+    """
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+
+        # Metrics trigger stop gates → system says STOP, user overrides to GO
         contract = runtime.submit_validation_result(
             result.task_id,
             ValidationResultRequest(
                 actual_spend=1500,
-                metrics={"sample_count": 10, "intent_rate": 0.03},
-                outcome="positive",  # user disagrees with system
+                metrics={"sample_count": 35, "intent_rate": 0.03},
+                outcome="positive",
+                override_reason="已取得线下供应商保底回购协议",
+                override_by="demo-user",
             ),
         )
         assert contract.verdict == DecisionVerdict.GO
         assert contract.system_verdict == DecisionVerdict.STOP
         assert contract.human_override == DecisionVerdict.GO
+        assert contract.override_reason == "已取得线下供应商保底回购协议"
+        assert contract.override_by == "demo-user"
+        assert contract.override_at is not None
         assert any("人工覆盖" in b for b in contract.core_basis)
+        # Evidence coverage reflects experiment completion, not override
+        validation_cp = next(
+            cp for cp in contract.evidence_coverage.checkpoints if "验证" in cp.question
+        )
+        assert validation_cp.status == "pass"  # experiment was done
+        assert "STOP" in validation_cp.basis  # result was STOP, not overridden
 
     asyncio.run(scenario())
