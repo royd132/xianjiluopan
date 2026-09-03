@@ -265,5 +265,11 @@ class ValidationResultRequest(BaseModel):
     metrics: dict[str, Any] = Field(default_factory=dict, description="e.g. click_count, intent_rate, cpc, sample_feedback_count")
     outcome: Literal["positive", "negative", "inconclusive"] = "inconclusive"
     notes: str | None = None
-    override_reason: str | None = None
-    override_by: str | None = None
+
+
+class OverrideRequest(BaseModel):
+    """Human override of a system verdict. Separate from validation submission."""
+
+    target_verdict: DecisionVerdict
+    reason: str = Field(min_length=1, description="Why the human disagrees with the system verdict")
+    operator: str = Field(default="demo-user", min_length=1)

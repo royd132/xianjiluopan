@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from .api_dependencies import get_runtime, require_admin_access
 from .data import MockDataProvider
-from .models import ProviderReloadRequest, ResearchRequest, ReviewRequest, ValidationResultRequest
+from .models import OverrideRequest, ProviderReloadRequest, ResearchRequest, ReviewRequest, ValidationResultRequest
 from .runtime import ForesightRuntime, UnsupportedResearchModeError
 
 
@@ -188,6 +188,22 @@ async def submit_validation_result(
 ) -> dict:
     try:
         contract = runtime.submit_validation_result(task_id, result)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Contract not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return contract.model_dump(mode="json")
+
+
+@router.post("/contracts/{task_id}/override", status_code=200)
+async def override_contract(
+    task_id: str,
+    override: OverrideRequest,
+    runtime: RuntimeDep,
+    _admin: AdminDep,
+) -> dict:
+    try:
+        contract = runtime.override_contract(task_id, override)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Contract not found") from exc
     except ValueError as exc:

@@ -99,6 +99,14 @@ export const foresightClient = {
     });
   },
 
+  overrideContract(taskId, override) {
+    return requestJson(`/api/v1/contracts/${encodeURIComponent(taskId)}/override`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(override),
+    });
+  },
+
   openResearchEvents(taskId) {
     return new EventSource(
       `${API_BASE_URL}/api/v1/research/${encodeURIComponent(taskId)}/events`,

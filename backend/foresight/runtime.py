@@ -28,6 +28,7 @@ from .models import (
     DecisionVerdict,
     EvidenceItem,
     FeedbackRecord,
+    OverrideRequest,
     PainPoint,
     ResearchRequest,
     ResearchResult,
@@ -682,10 +683,14 @@ class ForesightRuntime:
         # --- Stop gates (abort threshold) ---
         stop_triggered: list[str] = []
 
-        if intent > 0 and intent <= criteria.stop_intent_rate:
+        # Distinguish "not submitted" from "actually 0%"
+        intent_raw = metrics.get("intent_rate")
+        intent_submitted = intent_raw is not None
+
+        if intent_submitted and intent <= criteria.stop_intent_rate:
             stop_triggered.append(f"意向率 {intent:.0%} ≤ 否决线 {criteria.stop_intent_rate:.0%}")
 
-        if sample > 0 and sample <= criteria.stop_sample_count and intent <= criteria.stop_intent_rate:
+        if intent_submitted and sample > 0 and sample <= criteria.stop_sample_count and intent <= criteria.stop_intent_rate:
             stop_triggered.append(f"样本量 {sample} ≤ {criteria.stop_sample_count} 且意向率不达标")
 
         # --- Three-state verdict ---
@@ -714,10 +719,6 @@ class ForesightRuntime:
         contract.system_verdict = system_verdict
         contract.verdict = new_verdict
         contract.human_override = human_override
-        if human_override:
-            contract.override_reason = result.override_reason
-            contract.override_by = result.override_by or "demo-user"
-            contract.override_at = datetime.now(timezone.utc)
         contract.core_basis.append(
             f"验证结果：实际花费 ¥{result.actual_spend:.0f}"
         )
@@ -730,8 +731,7 @@ class ForesightRuntime:
         if human_override:
             contract.core_basis.append(
                 f"人工覆盖：系统判定={system_verdict.value}，"
-                f"人工覆盖={human_override.value}"
-                + (f"，理由={result.override_reason}" if result.override_reason else "")
+                f"人工覆盖={human_override.value}（通过 /override 端点可记录详细理由）"
             )
 
         # --- Evidence coverage: "验证完成" = experiment was conducted ---
@@ -764,6 +764,65 @@ class ForesightRuntime:
             }
             self.harness.trace.write(run["trace_id"], task_id, "validation.submitted", payload)
             self.harness.runs.record_event(task_id, run["trace_id"], "validation.submitted", payload, "validation")
+
+        return contract
+
+    def override_contract(
+        self, task_id: str, override: OverrideRequest
+    ) -> DecisionContract:
+        """Human override of a system verdict. Does NOT modify evidence coverage.
+
+        This is a separate endpoint from submit_validation_result:
+          - /validate-result = system re-evaluates with new metrics
+          - /override = human explicitly overrides the system verdict
+        """
+        stored = self.get_result(task_id)
+        if not stored or not stored.contract:
+            raise KeyError(f"No decision contract available for task {task_id}")
+
+        contract = stored.contract
+        if contract.system_verdict is None:
+            raise ValueError("Contract has no system verdict to override")
+        if override.target_verdict == contract.system_verdict:
+            raise ValueError(
+                f"Override target ({override.target_verdict.value}) matches "
+                f"system verdict — no override needed"
+            )
+
+        contract.system_verdict = contract.system_verdict  # unchanged
+        contract.human_override = override.target_verdict
+        contract.verdict = override.target_verdict
+        contract.override_reason = override.reason
+        contract.override_by = override.operator
+        contract.override_at = datetime.now(timezone.utc)
+
+        if override.target_verdict == DecisionVerdict.GO:
+            contract.allowed_investment = contract.planned_investment
+        elif override.target_verdict == DecisionVerdict.STOP:
+            contract.allowed_investment = 0
+
+        contract.core_basis.append(
+            f"人工覆盖：系统判定={contract.system_verdict.value}，"
+            f"人工覆盖为 {override.target_verdict.value}，"
+            f"理由={override.reason}，操作人={override.operator}"
+        )
+
+        # Persist
+        self.harness.memory.put("contracts", task_id, contract.model_dump(mode="json"))
+        stored.contract = contract
+        self.harness.memory.put("research_results", task_id, stored.model_dump(mode="json"))
+
+        # Trace
+        run = self.harness.runs.get_run(task_id)
+        if run:
+            payload = {
+                "system_verdict": contract.system_verdict.value,
+                "override": override.target_verdict.value,
+                "reason": override.reason,
+                "operator": override.operator,
+            }
+            self.harness.trace.write(run["trace_id"], task_id, "contract.override", payload)
+            self.harness.runs.record_event(task_id, run["trace_id"], "contract.override", payload, "override")
 
         return contract
 

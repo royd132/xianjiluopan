@@ -7,7 +7,7 @@ import pytest
 
 from foresight.events import CollaborationBlackboard
 from foresight.data import MockDataProvider
-from foresight.models import CardType, DecisionVerdict, ResearchRequest, ReviewRequest, ValidationResultRequest
+from foresight.models import CardType, DecisionVerdict, OverrideRequest, ResearchRequest, ReviewRequest, ValidationResultRequest
 from foresight.policy import DEFAULT_POLICY, evaluate_decision_cards
 from foresight.real_data_provider import RealDataProvider
 from foresight.runtime import ForesightRuntime, UnsupportedResearchModeError
@@ -594,8 +594,37 @@ def test_contract_gray_zone_returns_validate(tmp_path):
     asyncio.run(scenario())
 
 
+def test_contract_zero_intent_rate_stops(tmp_path):
+    """intent_rate=0% with real sample should STOP, not VALIDATE."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+
+        # 35 people, 0% intent → clearly STOP
+        contract = runtime.submit_validation_result(
+            result.task_id,
+            ValidationResultRequest(
+                actual_spend=2000,
+                metrics={"sample_count": 35, "intent_rate": 0.0, "pain_confirmation_rate": 0.0},
+                outcome="negative",
+            ),
+        )
+        assert contract.verdict == DecisionVerdict.STOP
+        assert contract.system_verdict == DecisionVerdict.STOP
+        # Evidence coverage: validation was done
+        validation_cp = next(
+            cp for cp in contract.evidence_coverage.checkpoints if "验证" in cp.question
+        )
+        assert validation_cp.status == "pass"
+
+    asyncio.run(scenario())
+
+
 def test_contract_human_override_recorded(tmp_path):
-    """User can override system verdict, but both are recorded separately.
+    """User can override system verdict via /override endpoint.
     Override does NOT modify evidence coverage.
     """
 
@@ -605,29 +634,44 @@ def test_contract_human_override_recorded(tmp_path):
             ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
         )
 
-        # Metrics trigger stop gates → system says STOP, user overrides to GO
+        # First: submit validation with inconclusive outcome → system STOP
         contract = runtime.submit_validation_result(
             result.task_id,
             ValidationResultRequest(
                 actual_spend=1500,
                 metrics={"sample_count": 35, "intent_rate": 0.03},
-                outcome="positive",
-                override_reason="已取得线下供应商保底回购协议",
-                override_by="demo-user",
+                outcome="inconclusive",
             ),
         )
-        assert contract.verdict == DecisionVerdict.GO
+        assert contract.verdict == DecisionVerdict.STOP
         assert contract.system_verdict == DecisionVerdict.STOP
-        assert contract.human_override == DecisionVerdict.GO
-        assert contract.override_reason == "已取得线下供应商保底回购协议"
-        assert contract.override_by == "demo-user"
-        assert contract.override_at is not None
-        assert any("人工覆盖" in b for b in contract.core_basis)
-        # Evidence coverage reflects experiment completion, not override
+        # Evidence coverage reflects experiment completion
         validation_cp = next(
             cp for cp in contract.evidence_coverage.checkpoints if "验证" in cp.question
         )
-        assert validation_cp.status == "pass"  # experiment was done
-        assert "STOP" in validation_cp.basis  # result was STOP, not overridden
+        assert validation_cp.status == "pass"
+
+        # Now use /override endpoint to override STOP → GO
+        contract2 = runtime.override_contract(
+            result.task_id,
+            OverrideRequest(
+                target_verdict=DecisionVerdict.GO,
+                reason="已取得线下供应商保底回购协议",
+                operator="demo-user",
+            ),
+        )
+        assert contract2.verdict == DecisionVerdict.GO
+        assert contract2.system_verdict == DecisionVerdict.STOP  # unchanged
+        assert contract2.human_override == DecisionVerdict.GO
+        assert contract2.override_reason == "已取得线下供应商保底回购协议"
+        assert contract2.override_by == "demo-user"
+        assert contract2.override_at is not None
+        assert any("人工覆盖" in b for b in contract2.core_basis)
+        # Evidence coverage NOT modified by override
+        validation_cp2 = next(
+            cp for cp in contract2.evidence_coverage.checkpoints if "验证" in cp.question
+        )
+        assert validation_cp2.status == "pass"
+        assert "STOP" in validation_cp2.basis
 
     asyncio.run(scenario())

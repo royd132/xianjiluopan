@@ -112,12 +112,12 @@
                            真实验证结果
                            (metrics-driven)
                                   ↓
-                           重新决策 → GO / STOP
+                           重新决策 → GO / VALIDATE / STOP
 ```
 
 ### 验证结果回填
 
-当用户完成最小验证后，提交结构化指标（样本量、意向率、CPC、痛点确认率），系统按 `ValidationCriteria` 自动判定 Go / Stop。人工可以覆盖系统判定，但 `system_verdict` 和 `human_override` 会分开记录。
+当用户完成最小验证后，提交结构化指标（样本量、意向率、CPC、痛点确认率），系统按三态逻辑判定：Promotion Gates 全过 → GO；Stop Gates 触发 → STOP；其余灰区 → VALIDATE。人工可通过 `/override` 端点覆盖系统判定，`system_verdict` 和 `human_override` 分开记录并审计。
 
 ### 证据覆盖率
 
@@ -378,7 +378,8 @@ $env:FORESIGHT_DEMO_READ_ONLY="true"
 | GET | `/api/v1/runtime/extensions` | 查看活动和退役的插件 generation |
 | POST | `/api/v1/runtime/providers/mock/reload` | 热更新内置 Mock Provider |
 | GET | `/api/v1/research/{id}/component-snapshot` | 查看任务的插件、工具和策略版本 |
-| POST | `/api/v1/contracts/{id}/validate-result` | 提交验证结果，系统按指标重新判定 Go/Stop |
+| POST | `/api/v1/contracts/{id}/validate-result` | 提交验证结果，系统按 Promotion/Stop Gates 三态判定 |
+| POST | `/api/v1/contracts/{id}/override` | 人工覆盖系统判定，独立审计 system_verdict 与 override |
 
 ### 离线 CLI
 

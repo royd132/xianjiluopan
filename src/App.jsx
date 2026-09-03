@@ -611,12 +611,10 @@ function App() {
                     const reason = window.prompt('请输入覆盖理由（将记录审计）：');
                     if (!reason) return;
                     try {
-                      const contract = await foresightClient.submitValidationResult(currentTaskId, {
-                        actual_spend: 0,
-                        metrics: {},
-                        outcome: 'positive',
-                        override_reason: reason,
-                        override_by: 'demo-user',
+                      const contract = await foresightClient.overrideContract(currentTaskId, {
+                        target_verdict: 'GO',
+                        reason,
+                        operator: 'demo-user',
                       });
                       setDecisionContract(contract);
                       setToast('已人工覆盖为 GO（system_verdict 保留为 STOP）');
