@@ -308,6 +308,7 @@ class DecisionCompilerAgent(BaseAgent):
         return DecisionContract(
             task_id="",  # filled by runtime
             verdict=verdict,
+            system_verdict=verdict,
             planned_investment=planned,
             investment_stage=request.investment_stage,
             allowed_investment=allowed,

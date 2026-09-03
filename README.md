@@ -146,7 +146,7 @@
 
 当前仓库已经包含一条可以离线复现的完整工程链路，而不是只有界面稿：
 
-- React 洞察工作台；
+- React 首单决策台；
 - FastAPI REST 与 SSE 服务；
 - 事件驱动 `CollaborationBlackboard`；
 - 6 个职责明确的 Agent；

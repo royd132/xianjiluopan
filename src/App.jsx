@@ -125,7 +125,6 @@ function App() {
   const pricingFailure = decisionCards.find((card) => card.id === 'pricing')?.failureConditions?.[0];
   const productDecision = decisionCards.find((card) => card.id === 'product') || demoCards[0];
   const competitiveDecision = decisionCards.find((card) => card.id === 'competitive') || demoCards[2];
-  const opportunityScore = Math.round(Number(decisionCards.find((card) => card.id === 'product')?.metricValue || 86));
   const leadPain = insightPainPoints[0] || demoPainPoints[0];
   const demandSignal = insightSupplySignals[0] || demoSupplySignals[0];
   const failureConditionCount = hasReport ? decisionCards.reduce((count, card) => count + (card.failureConditions?.length || 0), 0) : 0;
@@ -360,7 +359,7 @@ function App() {
     link.download = `先机罗盘_${reportCategory}_${reportMarket}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
-    setToast('洞察报告已导出');
+    setToast('决策报告已导出');
   };
 
   const shareReport = () => {
@@ -518,7 +517,7 @@ function App() {
           {(running || agentStep < agents.length) && (
             <section className="agent-progress" aria-live="polite">
               <div className="progress-top">
-                <div><LoaderCircle className="spin" size={18} /><strong>{runtimeState === 'connected' ? '多 Agent Runtime' : 'Agent 演示'}正在洞察 {selectedMarket?.name}市场</strong></div>
+                <div><LoaderCircle className="spin" size={18} /><strong>{runtimeState === 'connected' ? '多 Agent Runtime' : 'Agent 演示'}正在生成 {selectedMarket?.name}市场首单决策</strong></div>
                 <span>{Math.min(agentStep * 25 + 8, 96)}%</span>
               </div>
               <div className="progress-track"><span style={{ width: `${Math.min(agentStep * 25 + 8, 96)}%` }} /></div>
@@ -603,6 +602,26 @@ function App() {
                   ⚠ 人工覆盖：系统判定={decisionContract.system_verdict}，已由人工覆盖为 {decisionContract.human_override}
                 </div>
               )}
+              {decisionContract.verdict === 'STOP' && !decisionContract.human_override && currentTaskId && (
+                <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, color: '#6b7280' }}>是否接受系统判定？</span>
+                  <button className="secondary-button" style={{ fontSize: 13 }} onClick={() => setToast('已接受系统判定 STOP')}>接受 STOP</button>
+                  <button className="secondary-button" style={{ fontSize: 13, borderColor: '#f59e0b', color: '#92400e' }} onClick={async () => {
+                    if (!window.confirm('人工覆盖不会改变 system_verdict，将记录 override。确认覆盖为 GO？')) return;
+                    try {
+                      const contract = await foresightClient.submitValidationResult(currentTaskId, {
+                        actual_spend: 0,
+                        metrics: {},
+                        outcome: 'positive',
+                      });
+                      setDecisionContract(contract);
+                      setToast('已人工覆盖为 GO（system_verdict 保留为 STOP）');
+                    } catch (error) {
+                      setToast(error.message || '覆盖失败');
+                    }
+                  }}>人工覆盖为 GO</button>
+                </div>
+              )}
             </section>
           )}
 
@@ -613,7 +632,7 @@ function App() {
                 <label style={{ fontSize: 13 }}>本次实际验证花费（¥）<input type="number" value={validationMetrics.actual_spend} onChange={(e) => setValidationMetrics({ ...validationMetrics, actual_spend: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
                 <label style={{ fontSize: 13 }}>样本量 <small style={{ color: '#6b7280' }}>要求 ≥30</small><input type="number" value={validationMetrics.sample_count} onChange={(e) => setValidationMetrics({ ...validationMetrics, sample_count: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
                 <label style={{ fontSize: 13 }}>购买意向率（%） <small style={{ color: '#6b7280' }}>要求 ≥12%</small><input type="number" step="1" value={validationMetrics.intent_rate} onChange={(e) => setValidationMetrics({ ...validationMetrics, intent_rate: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
-                <label style={{ fontSize: 13 }}>CPC（¥）</label>
+                <label style={{ fontSize: 13 }}>CPC（¥） <small style={{ color: '#6b7280' }}>可选 · 当前未设阈值</small><input type="number" step="0.1" value={validationMetrics.cpc} onChange={(e) => setValidationMetrics({ ...validationMetrics, cpc: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
                 <label style={{ fontSize: 13 }}>痛点确认率（%） <small style={{ color: '#6b7280' }}>要求 ≥30%</small><input type="number" step="1" value={validationMetrics.pain_confirmation_rate} onChange={(e) => setValidationMetrics({ ...validationMetrics, pain_confirmation_rate: e.target.value })} style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d0d5dd', marginTop: 4 }} /></label>
               </div>
               <button className="primary-button" disabled={validationSubmitting} onClick={async () => {
