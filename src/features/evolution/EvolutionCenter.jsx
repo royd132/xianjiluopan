@@ -5,15 +5,18 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Target,
 } from 'lucide-react';
 
 export function EvolutionPanel({
   evolution,
   evolutionLoading,
+  calibration,
   onLoadEvolution,
   onCreateCandidate,
   onActivatePolicy,
   onRollbackPolicy,
+  onRelaxPolicy,
 }) {
   const activePolicy = evolution?.active_policy;
   const readyPolicy = evolution?.policy_versions?.find((item) => item.status === 'ready');
@@ -67,10 +70,30 @@ export function EvolutionPanel({
         <p><BadgeCheck size={16} />合成门禁集：Validation n={evolution?.evaluation_dataset?.validation || 0}，Holdout n={evolution?.evaluation_dataset?.holdout || 0}；活动策略要求至少 {activePolicy?.policy?.minimum_evidence_count || 3} 条证据。</p>
         <div>
           <button className="secondary-button" onClick={onRollbackPolicy} disabled={evolutionLoading || !activePolicy?.parent_version}><History size={15} />回滚</button>
+          {onRelaxPolicy && <button className="secondary-button" onClick={onRelaxPolicy} disabled={evolutionLoading || openFailures.length > 0} title={openFailures.length ? '仍有未解决的失败案例，无法建议放松' : '没有待解决失败案例时可以尝试生成放松候选'}><RefreshCw size={15} />尝试放松</button>}
           {readyPolicy && <button className="secondary-button activate-policy" onClick={() => onActivatePolicy(readyPolicy.version)} disabled={evolutionLoading}><ShieldCheck size={15} />激活 {readyPolicy.version}</button>}
           <button className="primary-button compact" onClick={onCreateCandidate} disabled={evolutionLoading || openFailures.length === 0}>{evolutionLoading ? <LoaderCircle className="spin" size={16} /> : <Sparkles size={16} />}生成候选并评测</button>
         </div>
       </div>
+      {calibration && (
+        <div className="evolution-calibration" style={{ marginTop: 16, padding: '12px 16px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: 16, fontSize: 13 }}>
+          <Target size={17} style={{ color: '#059669' }} />
+          <div style={{ flex: 1 }}>
+            <strong style={{ color: '#065f46' }}>系统校准</strong>
+            <small style={{ color: '#6b7280', display: 'block' }}>
+              {calibration.total_outcomes > 0
+                ? `${calibration.total_outcomes} 条用户反馈，判定正确率 ${(calibration.accuracy * 100).toFixed(0)}%`
+                : '等待用户反馈真实经营结果以校准预测模型'}
+            </small>
+          </div>
+          {calibration.total_outcomes > 0 && (
+            <div style={{ display: 'flex', gap: 16, textAlign: 'center' }}>
+              <div><strong style={{ fontSize: 18, color: '#059669' }}>{calibration.correct_predictions}</strong><small style={{ display: 'block', color: '#6b7280' }}>正确</small></div>
+              <div><strong style={{ fontSize: 18, color: '#dc2626' }}>{calibration.total_outcomes - calibration.correct_predictions}</strong><small style={{ display: 'block', color: '#6b7280' }}>需改进</small></div>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

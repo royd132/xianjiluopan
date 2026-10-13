@@ -82,6 +82,7 @@ export function mapRuntimeEvidence(runtimeCards) {
     sourceMarket: item.source_market,
     evidenceKind: item.evidence_kind,
     modelId: item.model_id,
+    sourceRecordIds: item.source_record_ids || [],
   }));
 }
 

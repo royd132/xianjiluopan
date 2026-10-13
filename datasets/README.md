@@ -15,6 +15,8 @@
 | Amazon 商品匹配评论 | 流式扫描 355,676 条，保留 500 条；严格口径 75 条 | Qwen 商品级痛点抽取 | 研究用途本地缓存，不分发原文 |
 | Olist 巴西电商样本 | `pet_shop` 1,710 个订单、1,947 条明细、650 条葡语评论 | 巴西历史成交先验与原语证据 | 来源脚本可复现，原始 CSV 忽略 |
 | Amazon Reviews Multi 西语测试集 | 5,000 条 | 西语抽取器评测，不作为墨西哥市场事实 | 研究用途本地缓存，不分发原文 |
+| RePro 巴西葡萄牙语评论 | 10,000 条、约 4.3 MB | 仅用于葡语评论抽取离线校准；CC BY-NC-SA 4.0，不进入商业生产证据 | 本地缓存，不分发原文 |
+| SellerSprite Amazon Product Research | 按站点返回竞品价格、BSR、销量和评分 | 配置 secret-key 后按目标 Amazon 站点实时查询；不支持的市场不伪造结果 | API 响应只做本地证据缓存 |
 
 `scripts/data/verify_datasets.py` 会解析全部 CSV/JSONL 并输出行数与 SHA-256 前缀。2026-08-21 本机校验全部通过。
 
@@ -38,6 +40,7 @@ python scripts/data/download_amazon_metadata_sample.py
 python scripts/data/download_amazon_matched_reviews.py
 python scripts/data/download_olist.py
 python scripts/data/download_multilingual_reviews.py
+python scripts/data/download_repro.py
 python scripts/data/verify_datasets.py
 ```
 
@@ -60,13 +63,31 @@ BR × 自动宠物喂食器的真实闭环当前使用：
 
 | 缺口 | 尝试结果 | 当前处理 |
 |---|---|---|
-| 当日 Amazon / Mercado Libre 竞品价 | 官方公开搜索接口无可用免密路径；Mercado Libre 返回 403 | 使用 2023 商品快照，显式要求接入当前报价后重算 |
+| 当日 Amazon / Mercado Libre 竞品价 | Mercado Livre 官方搜索接口要求应用授权；无 token 时返回 403 | 已接入可选 Mercado Livre Provider；配置 `MERCADO_LIVRE_ACCESS_TOKEN` 后自动抓取并缓存，否则继续使用历史快照 |
 | Google Trends | 无官方公共 API，非官方抓取稳定性与条款风险较高 | 真实模式不生成搜索增长率 |
 | Reddit 社媒 | 匿名 JSON 接口返回 403 | 不作为真实证据，不用 Mock 冒充 |
 | GDELT 新闻趋势 | 本次请求触发 429 | 作为可选趋势 Provider，未进入当前结果 |
 | 马来语电商评论 | 找到的数据多为合成、语言相邻或许可不清 | MY 真实模式披露原语缺口，不把印尼语/合成文本冒充马来语 |
 | Shopee 当前商品样本 | 已下载 2026-08-06 快照，但样本为台湾站且价格被标记为 `[PREMIUM]` | 通过质量闸门拒绝，不接入 MY 决策 |
 | SCFI 完整历史 | 上海航交所条款限制公开使用 | 本地旧缓存不进入真实 Provider，改用 NY Fed GSCPI |
+
+## 新增 Provider 配置
+
+Mercado Livre 的当前巴西 listing Provider 只在环境变量存在时启用：
+
+```powershell
+$env:MERCADO_LIVRE_ACCESS_TOKEN = "<application access token>"
+```
+
+请求失败不会生成伪造价格，会回退到 `datasets/marketplace/mercado_livre.json` 或已有 Amazon/Olist 历史快照。RePro 下载后保存在 `datasets/reviews/RePro.csv`，只用于离线语言校准，不能拿来支撑商业模型结论。
+
+SellerSprite 的 Amazon Provider 只对其支持的站点启用（US、JP、UK、DE、FR、IT、ES、CA、IN）：
+
+```powershell
+$env:SELLERSPRITE_SECRET_KEY = "<SellerSprite secret-key>"
+```
+
+官方接口采用 `secret-key` 请求头，产品研究接口为 `/v1/product/research`；API 额度和站点范围以卖家精灵开放平台为准。
 
 ## 许可与使用边界
 

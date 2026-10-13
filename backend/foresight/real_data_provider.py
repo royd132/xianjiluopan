@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from .data import (
     CATEGORY_PROFILES,
@@ -14,13 +15,19 @@ from .data import (
     resolve_category,
     resolve_market,
 )
+from .freshness import age_in_days, cache_age_budget_for_source
 from .model_adapters import ModelAdapterError, QwenReviewExtractor, ReviewRecord
 from .models import EvidenceItem, PainPoint, ResearchRequest, SupplySignal
+from .policy import DEFAULT_POLICY
 from .providers import (
     ConnectorDataError,
     FxCsvConnector,
     GscpiCsvConnector,
     LsciCsvConnector,
+    MarketplaceDataError,
+    MercadoLivreConnector,
+    SellerSpriteConnector,
+    SellerSpriteDataError,
     PublicSignalConnectors,
     TradeCsvConnector,
 )
@@ -73,6 +80,22 @@ def _observed_at(value: str | int) -> datetime:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
 
+
+def _latest_mtime(paths: Iterable[Path | str]) -> datetime | None:
+    """Newest modification time across the files backing one cached source."""
+
+    newest: float | None = None
+    for path in paths:
+        candidate = Path(path)
+        if not candidate.is_file():
+            continue
+        modified = candidate.stat().st_mtime
+        if newest is None or modified > newest:
+            newest = modified
+    if newest is None:
+        return None
+    return datetime.fromtimestamp(newest, tz=timezone.utc)
+
 PAIN_PATTERNS = {
     "noise": (r"\bnoisy\b", r"\btoo loud\b", r"\bbuzzing\b", r"\bhumming\b"),
     "cleaning": (r"\bhard to clean\b", r"\bdifficult to clean\b", r"\bhassle to clean\b"),
@@ -108,10 +131,18 @@ PAIN_LABELS = {
 }
 
 
+def _opportunity_index(mentions: int, sample_size: int, intensity: float) -> float:
+    """Estimate pain opportunity without turning tiny samples into certainty."""
+
+    frequency = max(0.0, min(1.0, mentions / max(1, sample_size)))
+    severity = max(0.0, min(1.0, intensity))
+    return round(frequency * (0.5 + 0.5 * severity), 3)
+
+
 class RealDataProvider:
     """Public-data provider with Qwen-grounded review extraction."""
 
-    provider_version = "1.0.0"
+    provider_version = "1.1.0"
 
     def __init__(
         self,
@@ -128,6 +159,10 @@ class RealDataProvider:
         self.lsci_path = self.datasets_dir / "shipping" / "lsci.csv"
         self.olist_dir = self.datasets_dir / "olist"
         self.amazon_metadata_dir = self.datasets_dir / "amazon_metadata"
+        self.marketplace_cache = self.datasets_dir / "marketplace" / "mercado_livre.json"
+        self.mercado_livre = MercadoLivreConnector(self.marketplace_cache)
+        self.sellersprite_cache = self.datasets_dir / "marketplace" / "sellersprite.json"
+        self.sellersprite = SellerSpriteConnector(self.sellersprite_cache)
         self.signal_connectors = signal_connectors or PublicSignalConnectors(
             fx=FxCsvConnector(self.fx_dir, FX_FILES),
             trade=TradeCsvConnector(self.trade_path),
@@ -142,30 +177,87 @@ class RealDataProvider:
 
     def data_status(self) -> dict[str, Any]:
         review_files = [self.reviews_dir / filename for filename in set(CATEGORY_REVIEW_FILES.values())]
+        amazon_reviews_ready = all(path.is_file() and path.stat().st_size > 0 for path in review_files)
+        olist_ready = all(
+            (self.olist_dir / filename).is_file()
+            for filename in (
+                "olist_order_items_dataset.csv",
+                "olist_order_reviews_dataset.csv",
+                "olist_products_dataset.csv",
+            )
+        )
         signal_status = self.signal_connectors.status()
         checks = {
             "fx": signal_status["fx"],
-            "reviews": all(path.is_file() for path in review_files),
+            # Olist is a target-market review source for BR; Amazon review
+            # files remain the cross-market fallback for other markets.
+            "reviews": amazon_reviews_ready or olist_ready,
+            "amazon_reviews": amazon_reviews_ready,
             "trade": signal_status["trade"],
             "gscpi": signal_status["gscpi"],
             "lsci": signal_status["lsci"],
-            "olist": all(
-                (self.olist_dir / filename).is_file()
-                for filename in (
-                    "olist_order_items_dataset.csv",
-                    "olist_order_reviews_dataset.csv",
-                    "olist_products_dataset.csv",
-                )
-            ),
+            "olist": olist_ready,
             "amazon_metadata": (self.amazon_metadata_dir / "Pet_Supplies.relevant.jsonl").is_file(),
             "amazon_product_reviews": (self.reviews_dir / "Pet_Supplies.product_matched.jsonl").is_file(),
             "qwen": self.model_adapter.configured,
+            "mercado_livre": self.mercado_livre.available(),
+            "mercado_livre_live": self.mercado_livre.configured,
+            "sellersprite": self.sellersprite.available(),
+            "sellersprite_live": self.sellersprite.configured,
+            "sellersprite_mcp": self.sellersprite.mcp_enabled,
+            "sellersprite_transport": self.sellersprite.transport,
+            "repro": (self.datasets_dir / "reviews" / "RePro.csv").is_file(),
+            "google_trends": bool(os.getenv("GOOGLE_TRENDS_API_KEY")),
         }
         return {
             **checks,
             "hybrid_ready": all(checks[name] for name in ("fx", "reviews", "trade", "gscpi")),
             "real_ready": all(checks[name] for name in ("fx", "reviews", "trade", "gscpi", "qwen")),
             "datasets_dir": str(self.datasets_dir),
+            "cache_age_days": self.cache_age_report(),
+            "stale_caches": self.stale_caches(),
+        }
+
+    def cache_age_report(self) -> dict[str, int | None]:
+        """Age in days of each local dataset snapshot, from its file mtime."""
+
+        now = datetime.now(timezone.utc)
+        report: dict[str, int | None] = {}
+        for key, collected in self._cache_timestamps().items():
+            report[key] = None if collected is None else age_in_days(now, collected)
+        return report
+
+    def stale_caches(self, policy: dict[str, Any] | None = None) -> list[str]:
+        """Cached sources past their refresh budget — re-run the download script."""
+
+        active_policy = policy or DEFAULT_POLICY
+        ages = self.cache_age_report()
+        return [
+            f"{key}:{age}d/{cache_age_budget_for_source(key, active_policy)}d"
+            for key, age in ages.items()
+            if age is not None
+            and age > cache_age_budget_for_source(key, active_policy)
+        ]
+
+    def _cache_timestamps(self) -> dict[str, datetime | None]:
+        """When each cached source was actually fetched.
+
+        Evidence ``collected_at`` describes the snapshot, not the moment a
+        report happened to be assembled. Stamping "now" for a file downloaded
+        months ago makes the cache-expiry gate impossible to ever trigger.
+        """
+
+        review_paths = sorted(self.reviews_dir.glob("*.jsonl"))
+        if not review_paths:
+            review_paths = [self.olist_dir / "olist_order_reviews_dataset.csv"]
+        return {
+            "fx": _latest_mtime(self.fx_dir / name for name in FX_FILES.values()),
+            "trade": _latest_mtime([self.trade_path]),
+            "gscpi": _latest_mtime([self.gscpi_path]),
+            "lsci": _latest_mtime([self.lsci_path]),
+            "olist": _latest_mtime(sorted(self.olist_dir.glob("*.csv"))),
+            "amazon_metadata": _latest_mtime([self.amazon_metadata_dir / "Pet_Supplies.relevant.jsonl"]),
+            "reviews": _latest_mtime(review_paths),
         }
 
     def scenario_capabilities(self) -> list[dict[str, Any]]:
@@ -177,8 +269,14 @@ class RealDataProvider:
                 category_key = str(profile["key"])
                 amazon_price = category_key == "pet_feeder" and status["amazon_metadata"]
                 olist_price = market == "BR" and category_key in OLIST_CATEGORIES and status["olist"]
+                sellersprite_price = self.sellersprite.available(market, category_key)
+                marketplace_price = market == "BR" and self.mercado_livre.available(category_key)
                 price_source = (
-                    "Amazon Reviews 2023 商品快照"
+                    "SellerSprite Amazon 竞品数据"
+                    if sellersprite_price
+                    else "Mercado Livre 当前竞品报价"
+                    if marketplace_price
+                    else "Amazon Reviews 2023 商品快照"
                     if amazon_price
                     else "Olist 2016-2018 历史成交"
                     if olist_price
@@ -195,7 +293,8 @@ class RealDataProvider:
                 known_gaps = []
                 if market != "BR" or not status["olist"]:
                     known_gaps.append("native_market_reviews")
-                known_gaps.append("current_competitor_listings")
+                if not sellersprite_price and not marketplace_price:
+                    known_gaps.append("current_competitor_listings")
                 capabilities.append(
                     {
                         "market": market,
@@ -310,7 +409,12 @@ class RealDataProvider:
         category = resolve_category(request.category)
         market = resolve_market(request.market)
         category_key = str(category["key"])
-        relevant_reviews = self._relevant_reviews(category_key)
+        relevant_reviews = self._relevant_reviews(category_key, request.market.upper())
+        review_source = (
+            "Olist public dataset"
+            if relevant_reviews and relevant_reviews[0].get("_source_name") == "Olist public dataset"
+            else "Amazon Reviews 2023"
+        )
         model_error: str | None = None
         pain_points: list[PainPoint] = []
         if self.model_adapter.configured:
@@ -339,6 +443,10 @@ class RealDataProvider:
                 for point in mock["pain_points"]
             ]
             fallback_scope.append("pain_points")
+        for point in pain_points:
+            point.source = review_source
+            point.source_market = request.market.upper() if review_source == "Olist public dataset" else "global"
+            point.market_scope = "target_market" if review_source == "Olist public dataset" else "cross_market"
 
         now = datetime.now(timezone.utc)
         fx = self._fx_signal(request.market.upper())
@@ -346,8 +454,20 @@ class RealDataProvider:
         gscpi = self._gscpi_signal()
         lsci = self._lsci_signal(request.market.upper()) if status["lsci"] else None
         olist = self._olist_market_data(category_key) if request.market.upper() == "BR" and status["olist"] else None
+        marketplace = None
+        if request.market.upper() == "BR" and status["mercado_livre"]:
+            try:
+                marketplace = self.mercado_livre.search(category_key, request.market, request.category)
+            except MarketplaceDataError as exc:
+                model_error = model_error or str(exc)
+        sellersprite = None
+        if self.sellersprite.supports(request.market) and status["sellersprite"]:
+            try:
+                sellersprite = self.sellersprite.search(category_key, request.market, request.category)
+            except SellerSpriteDataError as exc:
+                model_error = model_error or str(exc)
         amazon_price = self._amazon_price_data(category_key) if status["amazon_metadata"] else None
-        if strict_model and not (amazon_price or (olist and olist["prices"])):
+        if strict_model and not (sellersprite or marketplace or amazon_price or (olist and olist["prices"])):
             raise ProviderUnavailableError(
                 "Real mode requires a source-backed price snapshot for this category and market"
             )
@@ -362,6 +482,9 @@ class RealDataProvider:
             lsci,
             olist,
             amazon_price,
+            marketplace,
+            sellersprite,
+            self._cache_timestamps(),
         )
         supply_signals = [
             SupplySignal(
@@ -409,7 +532,19 @@ class RealDataProvider:
                 )
             )
 
-        if amazon_price and amazon_price["prices"]:
+        if sellersprite and sellersprite["prices"]:
+            prices = sellersprite["prices"]
+            anchor_price = round(sum(prices) / len(prices), 1)
+            price_data_mode = "sellersprite_mcp_live_listings" if sellersprite.get("data_mode") == "mcp_live" else "sellersprite_live_listings" if sellersprite.get("data_mode") == "live" else "sellersprite_cached_listings"
+            price_currency = sellersprite["listings"][0].get("currency", "USD")
+            price_currency_symbol = "$" if price_currency == "USD" else price_currency
+        elif marketplace and marketplace["prices"]:
+            prices = marketplace["prices"]
+            anchor_price = round(sum(prices) / len(prices), 1)
+            price_data_mode = "mercado_livre_live_listings" if marketplace.get("data_mode") == "live" else "mercado_livre_cached_listings"
+            price_currency = "BRL"
+            price_currency_symbol = "R$"
+        elif amazon_price and amazon_price["prices"]:
             prices = amazon_price["prices"]
             anchor_price = round(amazon_price["median_price"], 1)
             price_data_mode = "amazon_2023_listing_snapshot"
@@ -428,10 +563,24 @@ class RealDataProvider:
             price_currency = "USD"
             price_currency_symbol = "US$"
         native_language = str(market["review_language"])
-        missing_signals = ["current_competitor_price_feed"]
+        missing_signals = [] if (marketplace or sellersprite) else ["current_competitor_price_feed"]
         native_language_source = bool(olist and olist["reviews"] and native_language == "pt")
         if native_language != "en" and not native_language_source:
             missing_signals.append(f"native_{native_language}_reviews")
+        seller_sprite_snapshot = None
+        if sellersprite:
+            seller_sprite_listings = sellersprite.get("listings", [])
+            seller_sprite_snapshot = {
+                "source": "SellerSprite MCP" if sellersprite.get("data_mode") == "mcp_live" else "SellerSprite API" if sellersprite.get("data_mode") == "live" else "SellerSprite cached snapshot",
+                "mode": sellersprite.get("data_mode", "cached"),
+                "listing_count": len(seller_sprite_listings),
+                "asin_count": sum(bool(row.get("asin")) for row in seller_sprite_listings),
+                "bsr_coverage": sum(row.get("bsr") is not None for row in seller_sprite_listings),
+                "rating_coverage": sum(row.get("rating") is not None for row in seller_sprite_listings),
+                "units_coverage": sum(row.get("units") is not None for row in seller_sprite_listings),
+                "price_range": [min(sellersprite["prices"]), max(sellersprite["prices"])] if sellersprite.get("prices") else None,
+                "currency": seller_sprite_listings[0].get("currency") if seller_sprite_listings else None,
+            }
         scenario = {
             "market_name": market["name"],
             "marketplace": market["marketplace"],
@@ -462,7 +611,8 @@ class RealDataProvider:
             "opportunity_score_basis": "grounded_review_pain + UN_Comtrade_growth",
             "opportunity_score_calibration": "heuristic_v1_not_outcome_calibrated",
             "gap_competitors": 0,
-            "competitive_data_mode": "not_collected",
+            "competitive_data_mode": f'sellersprite_{sellersprite.get("data_mode", "cached")}' if sellersprite else f'mercado_livre_{marketplace.get("data_mode", "cached")}' if marketplace else "not_collected",
+            "competitive_gap_verified": bool(sellersprite or marketplace),
             "repurchase_signal": "unverified",
             "freight_metric": "GSCPI 月度变化",
             "monitoring_status": "public-data-cache",
@@ -471,11 +621,14 @@ class RealDataProvider:
             "price_data_mode": price_data_mode,
             "price_currency": price_currency,
             "price_currency_symbol": price_currency_symbol,
-            "price_period": amazon_price["period"] if amazon_price else olist["period"] if olist else "cold-start hypothesis",
+            "price_period": sellersprite["observed_at"][:10] if sellersprite else marketplace["observed_at"][:10] if marketplace else amazon_price["period"] if amazon_price else olist["period"] if olist else "cold-start hypothesis",
             "native_language_source": native_language == "en" or native_language_source,
             "missing_signals": missing_signals,
             "llm_extraction": bool(pain_points and pain_points[0].extracted_by == "llm"),
             "model_error": model_error,
+            "marketplace_listing_count": len(sellersprite["listings"]) if sellersprite else len(marketplace["listings"]) if marketplace else 0,
+            "seller_sprite_snapshot": seller_sprite_snapshot,
+            "portuguese_calibration": self._repro_calibration_metadata(),
         }
         reviews = [
             {
@@ -525,15 +678,26 @@ class RealDataProvider:
             "scenario": scenario,
         }
 
-    def _load_reviews(self, category_key: str) -> list[dict[str, Any]]:
-        if category_key in self._review_cache:
-            return self._review_cache[category_key]
+    def _load_reviews(self, category_key: str, market: str | None = None) -> list[dict[str, Any]]:
+        cache_key = f"{market or '*'}:{category_key}"
+        if cache_key in self._review_cache:
+            return self._review_cache[cache_key]
         matched_path = self.reviews_dir / "Pet_Supplies.product_matched.jsonl"
+        amazon_path = self.reviews_dir / CATEGORY_REVIEW_FILES.get(category_key, CATEGORY_REVIEW_FILES["generic"])
         path = (
             matched_path
             if category_key == "pet_feeder" and matched_path.is_file()
-            else self.reviews_dir / CATEGORY_REVIEW_FILES.get(category_key, CATEGORY_REVIEW_FILES["generic"])
+            else amazon_path
         )
+        if (not path.is_file() or path.stat().st_size == 0) and market == "BR":
+            olist = self._olist_market_data(category_key)
+            if olist:
+                rows = [
+                    {**row, "_source_name": "Olist public dataset", "language": row.get("language") or "pt"}
+                    for row in olist["reviews"]
+                ]
+                self._review_cache[cache_key] = rows
+                return rows
         rows: list[dict[str, Any]] = []
         with path.open(encoding="utf-8") as handle:
             for line in handle:
@@ -542,13 +706,36 @@ class RealDataProvider:
                     if path == matched_path and row.get("parent_asin") not in self._amazon_strict_product_ids():
                         continue
                     rows.append(row)
-        self._review_cache[category_key] = rows
+        self._review_cache[cache_key] = rows
         return rows
 
-    def _relevant_reviews(self, category_key: str) -> list[dict[str, Any]]:
-        rows = self._load_reviews(category_key)
+    def _repro_calibration_metadata(self) -> dict[str, Any]:
+        """Expose the downloaded benchmark without mixing it into market evidence."""
+
+        path = self.datasets_dir / "reviews" / "RePro.csv"
+        if not path.is_file():
+            return {"available": False, "used_for": "offline Portuguese review calibration"}
+        try:
+            with path.open(encoding="utf-8-sig", newline="") as handle:
+                count = max(0, sum(1 for _ in handle) - 1)
+        except (OSError, UnicodeError):
+            count = 0
+        return {
+            "available": count > 0,
+            "review_count": count,
+            "used_for": "offline Portuguese review calibration",
+            "commercial_evidence": False,
+            "license": "CC BY-NC-SA 4.0",
+        }
+
+    def _relevant_reviews(self, category_key: str, market: str | None = None) -> list[dict[str, Any]]:
+        rows = self._load_reviews(category_key, market)
+        if rows and rows[0].get("_source_name") == "Olist public dataset":
+            # Olist comments are Brazilian Portuguese; the English keyword
+            # list is only valid for the Amazon cross-market corpus.
+            return self._balanced_review_sample(rows)
         if category_key == "pet_feeder" and (self.reviews_dir / "Pet_Supplies.product_matched.jsonl").is_file():
-            return sorted(rows, key=lambda row: (int(row.get("rating", 3)) <= 3, int(row.get("helpful_vote", 0))), reverse=True)
+            return self._balanced_review_sample(rows)
         terms = CATEGORY_RELEVANCE_TERMS.get(category_key, ())
         if not terms:
             return rows[:200]
@@ -557,7 +744,25 @@ class RealDataProvider:
             text = f'{row.get("title", "")} {row.get("text", "")}'.casefold()
             if any(term in text for term in terms):
                 relevant.append(row)
-        return sorted(relevant, key=lambda row: (int(row.get("rating", 3)) <= 3, int(row.get("helpful_vote", 0))), reverse=True)
+        return self._balanced_review_sample(relevant)
+
+    @staticmethod
+    def _balanced_review_sample(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep low ratings from crowding out representative customer voice."""
+
+        buckets: dict[int, list[dict[str, Any]]] = {rating: [] for rating in range(1, 6)}
+        for row in rows:
+            rating = max(1, min(5, int(row.get("rating", 3))))
+            buckets[rating].append(row)
+        for bucket in buckets.values():
+            bucket.sort(key=lambda row: int(row.get("helpful_vote", 0)), reverse=True)
+
+        balanced: list[dict[str, Any]] = []
+        while any(buckets.values()):
+            for rating in range(5, 0, -1):
+                if buckets[rating]:
+                    balanced.append(buckets[rating].pop(0))
+        return balanced
 
     async def _llm_pain_points(self, category: str, reviews: list[dict[str, Any]]) -> list[PainPoint]:
         records = [
@@ -570,7 +775,15 @@ class RealDataProvider:
             for index, row in enumerate(reviews[: self.model_adapter.max_reviews], start=1)
         ]
         source_ids = {
-            record.record_id: str(row.get("parent_asin") or row.get("asin") or record.record_id)
+            record.record_id: str(
+                row.get("review_id")
+                or row.get("id")
+                or record.record_id
+            )
+            for record, row in zip(records, reviews, strict=False)
+        }
+        language_by_record_id = {
+            record.record_id: str(row.get("language") or "en")
             for record, row in zip(records, reviews, strict=False)
         }
         extracted = await self.model_adapter.extract(category, records)
@@ -580,15 +793,17 @@ class RealDataProvider:
         for item in extracted:
             ids = item["review_ids"]
             ratings = [by_id[record_id].rating for record_id in ids]
+            languages = sorted({language_by_record_id.get(record_id, "en") for record_id in ids})
             intensity = sum((6 - rating) / 5 for rating in ratings) / len(ratings)
+            mentions = max(0, min(int(item["mentions"]), len(records)))
             points.append(
                 PainPoint(
                     pain_type=item["pain_type"],
                     label=item["label"],
-                    mentions=item["mentions"],
+                    mentions=mentions,
                     sentiment_intensity=round(max(0.2, min(1.0, intensity)), 3),
-                    opportunity_index=round(min(1.0, item["mentions"] / max(3, len(records)) * 3), 3),
-                    languages=["en"],
+                    opportunity_index=_opportunity_index(item["mentions"], len(records), intensity),
+                    languages=languages,
                     sample_original=item["sample_original"],
                     sample_translation=item["sample_translation"],
                     source="Amazon Reviews 2023",
@@ -619,6 +834,7 @@ class RealDataProvider:
             if not rows:
                 continue
             ratings = [int(row.get("rating", 3)) for row in rows]
+            languages = sorted({str(row.get("language") or "en") for row in rows})
             source_ids = [str(row.get("parent_asin") or row.get("asin") or "unknown") for row in rows[:10]]
             points.append(
                 PainPoint(
@@ -626,8 +842,8 @@ class RealDataProvider:
                     label=PAIN_LABELS[pain_type],
                     mentions=len(rows),
                     sentiment_intensity=round(sum((6 - value) / 5 for value in ratings) / len(ratings), 3),
-                    opportunity_index=round(min(1.0, len(rows) / max(3, len(reviews)) * 3), 3),
-                    languages=["en"],
+                    opportunity_index=_opportunity_index(len(rows), len(reviews), sum((6 - value) / 5 for value in ratings) / len(ratings)),
+                    languages=languages,
                     sample_original=str(rows[0].get("text") or rows[0].get("title") or "")[:240],
                     sample_translation=f"规则抽取：{PAIN_LABELS[pain_type]}",
                     source="Amazon Reviews 2023",
@@ -689,6 +905,7 @@ class RealDataProvider:
                     "rating": int(row["review_score"]),
                     "title": row.get("review_comment_title") or "",
                     "text": row.get("review_comment_message") or "",
+                    "language": "pt",
                 }
                 for row in csv.DictReader(handle)
                 if row["order_id"] in order_ids and (row.get("review_comment_message") or "").strip()
@@ -769,7 +986,15 @@ class RealDataProvider:
         lsci: dict[str, Any] | None,
         olist: dict[str, Any] | None,
         amazon_price: dict[str, Any] | None,
+        marketplace: dict[str, Any] | None,
+        sellersprite: dict[str, Any] | None,
+        cached_at: dict[str, datetime | None],
     ) -> list[EvidenceItem]:
+        def collected(key: str) -> datetime:
+            """Snapshot time of the source behind this evidence, else assembly time."""
+
+            return cached_at.get(key) or now
+
         evidences = [
             EvidenceItem(
                 source_name="ECB reference rates via Frankfurter",
@@ -777,7 +1002,7 @@ class RealDataProvider:
                 claim=f'{fx["label"]} 近约30个交易日变动 {fx["change_pct"]:+.2f}%',
                 raw_value=f'{fx["latest_date"]}: {fx["latest_value"]} {fx["unit"]}',
                 url="https://frankfurter.dev/",
-                collected_at=now,
+                collected_at=collected("fx"),
                 observed_at=_observed_at(fx["latest_date"]),
                 observation_period=f'{fx["previous_date"]} to {fx["latest_date"]}',
                 freshness_class="live",
@@ -793,7 +1018,7 @@ class RealDataProvider:
                 claim=f'{request.market.upper()} 相关 HS 进口额同比 {trade["change_pct"]:+.1f}%',
                 raw_value=f'{trade["latest_year"]}: USD {trade["latest_value"]:,.0f}',
                 url="https://comtradeplus.un.org/",
-                collected_at=now,
+                collected_at=collected("trade"),
                 observed_at=_observed_at(trade["latest_year"]),
                 observation_period=str(trade["latest_year"]),
                 freshness_class="structural",
@@ -809,7 +1034,7 @@ class RealDataProvider:
                 claim=f'全球供应链压力指数最新为 {gscpi["latest_value"]:+.3f} 个标准差',
                 raw_value=f'{gscpi["latest_date"]}: {gscpi["latest_value"]:+.3f}',
                 url="https://www.newyorkfed.org/research/policy/gscpi",
-                collected_at=now,
+                collected_at=collected("gscpi"),
                 observed_at=_observed_at(gscpi["latest_date"]),
                 observation_period=gscpi["latest_date"],
                 freshness_class="recent",
@@ -828,7 +1053,7 @@ class RealDataProvider:
                     claim=f'{request.market.upper()} 班轮运输连接度同比 {lsci["change_pct"]:+.1f}%',
                     raw_value=f'{lsci["latest_year"]}: {lsci["latest_value"]:.3f}',
                     url="https://data.worldbank.org/indicator/IS.SHP.GCNW.XQ",
-                    collected_at=now,
+                    collected_at=collected("lsci"),
                     observed_at=_observed_at(lsci["latest_year"]),
                     observation_period=str(lsci["latest_year"]),
                     freshness_class="structural",
@@ -851,7 +1076,7 @@ class RealDataProvider:
                     raw_value=f'{olist["period"]}: P25=R${p25:.2f}, median=R${olist["median_price"]:.2f}, P75=R${p75:.2f}',
                     url="https://github.com/olist/work-at-olist-data",
                     language="pt",
-                    collected_at=now,
+                    collected_at=collected("olist"),
                     observed_at=_observed_at("2018"),
                     observation_period=olist["period"],
                     freshness_class="historical",
@@ -872,7 +1097,7 @@ class RealDataProvider:
                         raw_value=review["text"][:240],
                         url="https://github.com/olist/work-at-olist-data",
                         language="pt",
-                        collected_at=now,
+                        collected_at=collected("olist"),
                         observed_at=_observed_at("2018"),
                         observation_period=olist["period"],
                         freshness_class="historical",
@@ -894,7 +1119,7 @@ class RealDataProvider:
                     claim=f'{amazon_price["product_count"]} 个自动喂食器商品快照形成价格区间',
                     raw_value=f'P25=US${p25:.2f}, median=US${amazon_price["median_price"]:.2f}, P75=US${p75:.2f}',
                     url="https://amazon-reviews-2023.github.io/",
-                    collected_at=now,
+                    collected_at=collected("amazon_metadata"),
                     observed_at=_observed_at("2023"),
                     observation_period=amazon_price["period"],
                     freshness_class="historical",
@@ -905,19 +1130,64 @@ class RealDataProvider:
                     source_record_ids=[amazon_price["period"]],
                 )
             )
+        if marketplace:
+            prices = marketplace["prices"]
+            p25 = prices[int((len(prices) - 1) * 0.25)]
+            p75 = prices[int((len(prices) - 1) * 0.75)]
+            evidences.append(
+                EvidenceItem(
+                    source_name="Mercado Livre · current Brazilian listings",
+                    source_type="price",
+                    claim=f'{len(marketplace["listings"])} 个在售商品形成竞品价格参考（{"实时响应" if marketplace.get("data_mode") == "live" else "缓存快照"}）',
+                    raw_value=f'{marketplace["observed_at"][:10]}: P25=R${p25:.2f}, mean=R${sum(prices) / len(prices):.2f}, P75=R${p75:.2f}',
+                    url=marketplace["source_url"],
+                    collected_at=_observed_at(marketplace["observed_at"]),
+                    observed_at=_observed_at(marketplace["observed_at"]),
+                    observation_period=marketplace["observed_at"][:10],
+                    freshness_class="live" if marketplace.get("data_mode") == "live" else "recent",
+                    market_scope="target_market",
+                    source_market="BR",
+                    confidence=0.9,
+                    verified=True,
+                    source_record_ids=[row["id"] for row in marketplace["listings"][:20] if row.get("id")],
+                )
+            )
+        if sellersprite:
+            prices = sellersprite["prices"]
+            p25 = prices[int((len(prices) - 1) * 0.25)]
+            p75 = prices[int((len(prices) - 1) * 0.75)]
+            evidences.append(
+                EvidenceItem(
+                    source_name="SellerSprite · Amazon product research",
+                    source_type="price",
+                    claim=f'{len(sellersprite["listings"])} 个 Amazon 竞品商品形成价格与销量参考（{"MCP 实时响应" if sellersprite.get("data_mode") == "mcp_live" else "API 实时响应" if sellersprite.get("data_mode") == "live" else "缓存快照"}）',
+                    raw_value=f'{sellersprite["observed_at"][:10]}: P25={p25:.2f}, mean={sum(prices) / len(prices):.2f}, P75={p75:.2f}',
+                    url=sellersprite["source_url"],
+                    collected_at=_observed_at(sellersprite["observed_at"]),
+                    observed_at=_observed_at(sellersprite["observed_at"]),
+                    observation_period=sellersprite["observed_at"][:10],
+                    freshness_class="live" if sellersprite.get("data_mode") in {"live", "mcp_live"} else "recent",
+                    market_scope="target_market",
+                    source_market=request.market.upper(),
+                    confidence=0.91,
+                    verified=True,
+                    source_record_ids=[row["asin"] for row in sellersprite["listings"][:20] if row.get("asin")],
+                )
+            )
         for point in pain_points[:2]:
             verification = point.verification
             ids = list(verification.get("source_record_ids") or verification.get("review_ids") or [])
+            is_olist = point.source == "Olist public dataset"
             evidences.append(
                 EvidenceItem(
-                    source_name=f"Amazon Reviews 2023 · {category_key}",
+                    source_name=("Olist public dataset · Brazilian reviews" if is_olist else f"Amazon Reviews 2023 · {category_key}"),
                     source_type="review",
                     claim=f'{point.mentions} 条入模评论支持“{point.label}”',
                     raw_value=point.sample_original,
-                    url="https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023",
-                    collected_at=now,
-                    observed_at=_observed_at("2023"),
-                    observation_period="Amazon Reviews 2023 snapshot",
+                    url=("https://github.com/olist/work-at-olist-data" if is_olist else "https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023"),
+                    collected_at=collected("olist" if is_olist else "reviews"),
+                    observed_at=_observed_at("2018-12-31" if is_olist else "2023"),
+                    observation_period=("Olist 2016-2018 public snapshot" if is_olist else "Amazon Reviews 2023 snapshot"),
                     freshness_class="historical",
                     market_scope=point.market_scope,
                     source_market=point.source_market,

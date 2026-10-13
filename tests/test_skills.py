@@ -4,6 +4,7 @@ import json
 import pytest
 
 from foresight.models import ResearchRequest, ReviewRequest
+from foresight.policy import DEFAULT_POLICY
 from foresight.runtime import ForesightRuntime
 from foresight.skills import (
     SkillArtifact,
@@ -336,6 +337,9 @@ def test_skill_bank_promote_and_rollback(tmp_path):
     bank.promote(v2.skill_id)
 
     assert store.list_active()[0].version == "0.2.0"
+    # Two versions of the name now exist, so status() must advertise it as
+    # rollbackable — that is what enables the operator's rollback button.
+    assert bank.status()["rollbackable_names"] == ["test-promote"]
 
     rolled_back = bank.rollback_skill("test-promote")
     assert rolled_back.version == "0.1.0"
@@ -366,6 +370,8 @@ def test_skill_bank_status(tmp_path):
     assert status["total_skills"] >= 4
     assert status["candidate_count"] >= 4
     assert status["active_count"] == 0
+    # Nothing has been activated yet, so no name has a parent to roll back to.
+    assert status["rollbackable_names"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +422,150 @@ def test_runtime_retrieved_skills_appear_in_card_data(tmp_path):
         # Check that retrieved_skills are in card_specific_data
         for card in result.cards:
             retrieved = card.card_specific_data.get("retrieved_skills", [])
-            assert isinstance(retrieved, list)
+            # An empty list satisfied this assertion for as long as the query was
+            # the product name, which is how a dead injection path stayed green.
+            assert retrieved, "a promoted seed skill must be retrieved for the demo run"
+            assert all(item["skill_id"] and item["version"] for item in retrieved)
 
     asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Injection: a retrieved skill has to change the run, not decorate it
+# ---------------------------------------------------------------------------
+
+
+def test_retrieval_matches_the_decision_context_not_the_product_name(tmp_path):
+    """A run retrieves against the decisions it is about to make, not the product.
+
+    "pet feeder BR" is a token match against nothing — no decision check is scoped
+    to a product — so the bank was wired into the pipeline and never reached.
+    """
+    store = SkillStore(tmp_path / "skills.db")
+    load_seed_skills(store)
+    bank = SkillBank(store)
+    for skill in store.list_all():
+        store.save(skill.model_copy(update={"status": "ready"}))
+        store.activate(skill.skill_id)
+
+    hits = bank.retrieve_for_research("pet feeder", "BR")
+    assert hits, "the demo research context must retrieve the seed decision checks"
+    assert all(hit["retrieval_score"] > 0 for hit in hits)
+    # Injection needs something to execute, and the body has to travel with it
+    # for an operator to be able to read why the check exists.
+    assert any(hit["evidence_policy"] for hit in hits)
+    assert all(hit["body"] for hit in hits)
+    scores = [hit["retrieval_score"] for hit in hits]
+    assert scores == sorted(scores, reverse=True), "the top-k window must be ranked"
+
+
+def test_profile_bound_directives_are_deferred_in_mock_runs(tmp_path):
+    """A primary-source requirement cannot execute in a profile that collects no
+    primary sources. It is recorded as deferred, never silently enforced or lost."""
+    bank = SkillBank(SkillStore(tmp_path / "skills.db"))
+    retrieved = [
+        {
+            "name": "market-entry-evidence-check",
+            "version": "0.1.0",
+            "evidence_policy": "require_minimum_source_evidence:2;require_max_evidence_age_days:30",
+        }
+    ]
+
+    mock_policy = dict(DEFAULT_POLICY)
+    patch = bank.apply_evidence_policies(retrieved, mock_policy, "mock")
+    assert mock_policy["maximum_evidence_age_days"] == 30
+    assert mock_policy["minimum_source_evidence"] == DEFAULT_POLICY["minimum_source_evidence"]
+    assert list(patch["deferred"]) == ["market-entry-evidence-check@0.1.0"]
+    assert "mock-structure" in patch["deferred"]["market-entry-evidence-check@0.1.0"][0]
+
+    real_policy = dict(DEFAULT_POLICY)
+    real_patch = bank.apply_evidence_policies(retrieved, real_policy, "real")
+    assert real_policy["minimum_source_evidence"] == 2
+    assert real_patch["deferred"] == {}
+
+
+def test_a_retrieved_skill_changes_the_run_it_is_injected_into(tmp_path):
+    """The whole claim in one test: an active skill reaches the gate and the card.
+
+    Nothing is promoted by default, so the demo run is unchanged; once the seed
+    checks are active their directives are merged into the run's fingerprinted
+    policy, the gate docks every card, and the card carries the check.
+    """
+    async def scenario(activate: bool):
+        runtime = ForesightRuntime(tmp_path / f".foresight-{activate}")
+        if activate:
+            for skill in runtime.skill_store.list_all():
+                runtime.skill_store.save(skill.model_copy(update={"status": "ready"}))
+                runtime.skill_store.activate(skill.skill_id)
+        return runtime, await runtime.run(ResearchRequest(category="pet feeder", market="BR"))
+
+    _, before = asyncio.run(scenario(False))
+    assert before.cards[0].card_specific_data["applied_skill_checks"] == {}
+    assert not any("Skill" in item for item in before.contract.stop_conditions)
+
+    runtime, after = asyncio.run(scenario(True))
+    card = after.cards[0]
+    applied = card.card_specific_data["applied_skill_checks"]
+    assert applied, "a retrieved skill's directives must be merged, not just listed"
+    assert card.card_specific_data["deferred_skill_checks"], (
+        "the primary-source directive has to be recorded as deferred in a mock run"
+    )
+    # The dock is the visible half of injection: every published card carries it.
+    for plain, injected in zip(before.cards, after.cards):
+        assert round(plain.confidence_score - injected.confidence_score, 4) == 0.05
+    assert any("Skill 自检未达阈值" in item for item in after.contract.stop_conditions)
+    assert any("Skill" in basis for basis in after.contract.core_basis)
+    # Injection tightens the gate; it does not turn the demo run into a failure.
+    assert after.contract.verdict == before.contract.verdict
+    # And it is inside the run's fingerprinted policy, not applied beside it.
+    run_policy = runtime.component_snapshot(after.task_id)["policy"]
+    assert run_policy["policy"]["confidence_penalty"] == 0.05
+    assert run_policy["skill_patch"]["applied"] == applied
+
+
+def test_skill_evaluation_measures_against_the_parent_version(tmp_path):
+    """A new version has to beat the version it replaces.
+
+    Measured against the bare default instead — which is what the eval record
+    claimed was happening while it always evaluated ``DEFAULT_POLICY`` — a child
+    that drops its parent's staleness check scored as an improvement.
+    """
+    store = SkillStore(tmp_path / "skills.db")
+    bank = SkillBank(store)
+    parent = SkillArtifact(
+        name="stale-signal-recompute",
+        description="v1",
+        version="0.1.0",
+        evidence_policy="require_max_evidence_age_days:30",
+        status="ready",
+    )
+    store.save(parent)
+    child = SkillArtifact(
+        name="stale-signal-recompute",
+        description="v2 drops the staleness check",
+        version="0.2.0",
+        evidence_policy="require_minimum_source_evidence:3",
+        status="candidate",
+        parent_id=parent.skill_id,
+    )
+    store.save(child)
+
+    record = bank.evaluate_candidate(child.skill_id)
+    assert record["baseline_skill_id"] == parent.skill_id
+    assert record["metrics"]["holdout"]["improvement"] < 0
+    assert record["decision"] == "rejected"
+    assert store.get(child.skill_id).status == "rejected"
+
+    # A first version has no parent, so it is measured against the default policy
+    # — and that is recorded as such rather than claimed as a parent comparison.
+    orphan = SkillArtifact(
+        name="market-entry-evidence-check",
+        description="first version",
+        version="0.1.0",
+        evidence_policy="require_minimum_source_evidence:3",
+        status="candidate",
+    )
+    store.save(orphan)
+    orphan_record = bank.evaluate_candidate(orphan.skill_id)
+    assert orphan_record["baseline_skill_id"] is None
+    assert orphan_record["decision"] == "ready"

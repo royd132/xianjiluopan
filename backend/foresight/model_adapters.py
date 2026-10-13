@@ -62,7 +62,7 @@ class QwenReviewExtractor:
         max_reviews: int | None = None,
     ) -> None:
         self.api_key = (api_key or os.getenv("QWEN_API_KEY") or "").strip()
-        self.model = (model or os.getenv("QWEN_MODEL") or "qwen-plus").strip()
+        self.model = (model or os.getenv("QWEN_MODEL") or "qwen3.7-flash").strip()
         self.endpoint = (
             endpoint
             or os.getenv("QWEN_ENDPOINT")

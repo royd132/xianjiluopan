@@ -8,6 +8,8 @@ from .public_signals import (
     PublicSignalConnectors,
     TradeCsvConnector,
 )
+from .marketplace import MarketplaceDataError, MercadoLivreConnector
+from .sellersprite import SellerSpriteConnector, SellerSpriteDataError
 
 __all__ = [
     "ConnectorDataError",
@@ -17,4 +19,8 @@ __all__ = [
     "LsciCsvConnector",
     "PublicSignalConnectors",
     "TradeCsvConnector",
+    "MarketplaceDataError",
+    "MercadoLivreConnector",
+    "SellerSpriteConnector",
+    "SellerSpriteDataError",
 ]

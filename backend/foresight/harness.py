@@ -142,6 +142,19 @@ class MemoryStore(_SqliteBase):
                     metrics_json TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS actual_outcomes (
+                    outcome_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    contract_id TEXT NOT NULL,
+                    system_verdict TEXT NOT NULL,
+                    actual_revenue REAL,
+                    actual_profit REAL,
+                    actual_roi_pct REAL,
+                    verdict_was_correct INTEGER,
+                    notes TEXT,
+                    operator TEXT NOT NULL,
+                    reported_at TEXT NOT NULL
+                );
             """)
 
     def put(self, namespace: str, key: str, value: Any) -> None:
@@ -290,6 +303,47 @@ class MemoryStore(_SqliteBase):
             ).fetchall()
         return [{**dict(row), "metrics": json.loads(row["metrics_json"])} for row in rows]
 
+    def record_actual_outcome(self, record: dict[str, Any]) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """INSERT INTO actual_outcomes(
+                    outcome_id, task_id, contract_id, system_verdict,
+                    actual_revenue, actual_profit, actual_roi_pct,
+                    verdict_was_correct, notes, operator, reported_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    record["outcome_id"], record["task_id"], record["contract_id"],
+                    record["system_verdict"], record.get("actual_revenue"),
+                    record.get("actual_profit"), record.get("actual_roi_pct"),
+                    1 if record.get("verdict_was_correct") else (0 if record.get("verdict_was_correct") is False else None),
+                    record.get("notes"), record["operator"], record["reported_at"],
+                ),
+            )
+
+    def list_actual_outcomes(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM actual_outcomes ORDER BY reported_at DESC LIMIT ?", (min(limit, 200),)
+            ).fetchall()
+        return [{**dict(row), "verdict_was_correct": bool(row["verdict_was_correct"]) if row["verdict_was_correct"] is not None else None} for row in rows]
+
+    def calibration_summary(self) -> dict[str, Any]:
+        """How often the system was right, for the status dashboard."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT COUNT(*) AS total,
+                          SUM(CASE WHEN verdict_was_correct=1 THEN 1 ELSE 0 END) AS correct,
+                          SUM(CASE WHEN verdict_was_correct=0 THEN 1 ELSE 0 END) AS wrong
+                   FROM actual_outcomes WHERE verdict_was_correct IS NOT NULL"""
+            ).fetchone()
+        total = row["total"] or 0
+        correct = row["correct"] or 0
+        return {
+            "total_outcomes": total,
+            "correct_predictions": correct,
+            "accuracy": round(correct / total, 3) if total > 0 else None,
+        }
+
 
 class RunStore(_SqliteBase):
     """Append-only run ledger plus node-level recovery state."""
@@ -306,6 +360,7 @@ class RunStore(_SqliteBase):
                     current_node TEXT,
                     runtime_fingerprint TEXT NOT NULL,
                     component_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    result_json TEXT,
                     error TEXT,
                     started_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -331,6 +386,18 @@ class RunStore(_SqliteBase):
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY(task_id, node)
                 );
+                CREATE TABLE IF NOT EXISTS monitoring_subscriptions (
+                    subscription_id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    market TEXT NOT NULL,
+                    cadence TEXT NOT NULL,
+                    channels_json TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    last_checked_at TEXT,
+                    last_trigger_count INTEGER NOT NULL DEFAULT 0
+                );
             """)
             columns = {
                 row["name"]
@@ -340,6 +407,8 @@ class RunStore(_SqliteBase):
                 connection.execute(
                     "ALTER TABLE runs ADD COLUMN component_snapshot_json TEXT NOT NULL DEFAULT '{}'"
                 )
+            if "result_json" not in columns:
+                connection.execute("ALTER TABLE runs ADD COLUMN result_json TEXT")
 
     def start_run(
         self,
@@ -387,7 +456,37 @@ class RunStore(_SqliteBase):
         item = dict(row)
         item["request"] = json.loads(item.pop("request_json"))
         item["component_snapshot"] = json.loads(item.pop("component_snapshot_json") or "{}")
+        item["result"] = json.loads(item.pop("result_json")) if item.get("result_json") else None
         return item
+
+    def list_runs(self, workspace_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        """Return durable research history for the workbench."""
+
+        safe_limit = max(1, min(int(limit), 200))
+        query = "SELECT * FROM runs"
+        params: tuple[Any, ...] = ()
+        if workspace_id:
+            query += " WHERE json_extract(request_json, '$.workspace_id')=?"
+            params = (workspace_id,)
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        params += (safe_limit,)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["request"] = json.loads(item.pop("request_json"))
+            item["component_snapshot"] = json.loads(item.pop("component_snapshot_json") or "{}")
+            item["result"] = json.loads(item.pop("result_json")) if item.get("result_json") else None
+            items.append(item)
+        return items
+
+    def set_result(self, task_id: str, result: dict[str, Any]) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE runs SET result_json=?, updated_at=? WHERE task_id=?",
+                (json.dumps(result, ensure_ascii=False, default=str), utc_now(), task_id),
+            )
 
     def set_run_status(self, task_id: str, status: str, current_node: str | None = None, error: str | None = None) -> None:
         with self._connect() as connection:
@@ -472,6 +571,52 @@ class RunStore(_SqliteBase):
     def is_cancel_requested(self, task_id: str) -> bool:
         run = self.get_run(task_id)
         return bool(run and run["status"] == "cancel_requested")
+
+    def create_monitoring_subscription(self, subscription: dict[str, Any]) -> dict[str, Any]:
+        with self._connect() as connection:
+            connection.execute(
+                """INSERT INTO monitoring_subscriptions(
+                    subscription_id, workspace_id, category, market, cadence, channels_json, created_at
+                ) VALUES(?,?,?,?,?,?,?)""",
+                (
+                    subscription["subscription_id"], subscription["workspace_id"], subscription["category"],
+                    subscription["market"], subscription["cadence"], json.dumps(subscription["channels"]),
+                    subscription["created_at"],
+                ),
+            )
+        return subscription
+
+    def list_monitoring_subscriptions(self, workspace_id: str | None = "default") -> list[dict[str, Any]]:
+        query = "SELECT * FROM monitoring_subscriptions WHERE active=1"
+        params: tuple[Any, ...] = ()
+        if workspace_id is not None:
+            query += " AND workspace_id=?"
+            params = (workspace_id,)
+        query += " ORDER BY created_at DESC"
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [{**dict(row), "channels": json.loads(row["channels_json"])} for row in rows]
+
+    def touch_monitoring_subscription(self, subscription_id: str, checked_at: str, trigger_count: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE monitoring_subscriptions SET last_checked_at=?, last_trigger_count=? WHERE subscription_id=? AND active=1",
+                (checked_at, trigger_count, subscription_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM monitoring_subscriptions WHERE subscription_id=? AND active=1", (subscription_id,)
+            ).fetchone()
+        if not row:
+            return None
+        return {**dict(row), "channels": json.loads(row["channels_json"])}
+
+    def delete_monitoring_subscription(self, subscription_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE monitoring_subscriptions SET active=0, last_checked_at=? WHERE subscription_id=? AND active=1",
+                (utc_now(), subscription_id),
+            )
+        return cursor.rowcount > 0
 
 
 class CheckpointStore:

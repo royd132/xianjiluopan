@@ -15,7 +15,7 @@ from .agents import (
     SupplyChainAgent,
     run_parallel,
 )
-from .data import MockDataProvider
+from .data import MARKET_PROFILES, MockDataProvider
 from .events import CollaborationBlackboard, EventType, RuntimeEvent
 from .evolution import EvolutionEngine, FeedbackFlywheel
 from .extensions import PluginManifest, ScopeContext, ToolDefinition
@@ -27,6 +27,7 @@ from .models import (
     DecisionContract,
     DecisionVerdict,
     EvidenceItem,
+    MonitoringSubscriptionRequest,
     FeedbackRecord,
     OverrideRequest,
     PainPoint,
@@ -41,6 +42,16 @@ from .real_data_provider import ProviderUnavailableError, RealDataProvider
 
 class UnsupportedResearchModeError(ValueError):
     """Raised when a request asks for a data mode with no installed provider."""
+
+
+# Which agents a node runs, so the node's timeout can be sized against the tools
+# those agents are allowed to call. Keep in step with _execute_node.
+NODE_AGENTS: dict[str, tuple[str, ...]] = {
+    "collect": ("collector",),
+    "analyze": ("review-analyzer", "market-analyzer", "supply-chain-analyzer"),
+    "compile": ("decision-compiler",),
+    "validate": ("safety-evaluator",),
+}
 
 
 class ForesightRuntime:
@@ -103,11 +114,80 @@ class ForesightRuntime:
 
     def monitoring_snapshot(self, category: str, market: str) -> dict[str, Any]:
         if "hybrid" not in self.supported_modes:
-            raise UnsupportedResearchModeError("Monitoring requires the public-data cache")
+            return self._mock_monitoring_snapshot(category, market)
         try:
             return self.real_provider.monitoring_snapshot(category, market)
         except ProviderUnavailableError as exc:
             raise UnsupportedResearchModeError(str(exc)) from exc
+
+    def _mock_monitoring_snapshot(self, category: str, market: str) -> dict[str, Any]:
+        from .data import resolve_category, resolve_market
+
+        market_profile = resolve_market(market)
+        category_profile = resolve_category(category)
+        now = datetime.now(timezone.utc)
+        return {
+            "category": category,
+            "category_key": str(category_profile["key"]),
+            "market": market.upper(),
+            "generated_at": now.isoformat(),
+            "schedule_status": "mock_fallback",
+            "signals": [
+                {
+                    "key": "fx",
+                    "label": market_profile["fx_label"],
+                    "observed_at": now.date().isoformat(),
+                    "value": market_profile["fx_value"],
+                    "change_pct": 0.8,
+                    "threshold": "abs(30d) >= 5%",
+                    "triggered": False,
+                },
+                {
+                    "key": "trade",
+                    "label": f'{market.upper()} HS{category_profile["hs_code"]} 进口额',
+                    "observed_at": str(now.year),
+                    "value": float(market_profile["import_growth"]),
+                    "change_pct": market_profile["import_growth"],
+                    "threshold": "abs(YoY) >= 20%",
+                    "triggered": market_profile["import_growth"] >= 20,
+                },
+                {
+                    "key": "gscpi",
+                    "label": "全球供应链压力指数 GSCPI",
+                    "observed_at": now.date().isoformat(),
+                    "value": 0.0,
+                    "change_pct": 0.0,
+                    "threshold": "指数 >= 1 或月变动 >= 15%",
+                    "triggered": False,
+                },
+            ],
+            "trigger_count": 1 if market_profile["import_growth"] >= 20 else 0,
+            "capability": self.real_provider.scenario_capability(category, market),
+        }
+
+    def list_monitoring_subscriptions(self, workspace_id: str = "default") -> list[dict[str, Any]]:
+        return self.harness.runs.list_monitoring_subscriptions(workspace_id)
+
+    def create_monitoring_subscription(self, request: MonitoringSubscriptionRequest) -> dict[str, Any]:
+        if request.market.upper() not in MARKET_PROFILES:
+            raise ValueError(f"Unsupported target market: {request.market.upper()}")
+        subscription = request.model_dump(mode="json")
+        subscription.update({"subscription_id": str(uuid4()), "market": request.market.upper(), "created_at": datetime.now(timezone.utc).isoformat()})
+        return self.harness.runs.create_monitoring_subscription(subscription)
+
+    def check_monitoring_subscription(self, subscription_id: str) -> dict[str, Any]:
+        subscriptions = self.harness.runs.list_monitoring_subscriptions(None)
+        subscription = next((item for item in subscriptions if item["subscription_id"] == subscription_id), None)
+        if subscription is None:
+            raise KeyError(subscription_id)
+        snapshot = self.monitoring_snapshot(subscription["category"], subscription["market"])
+        updated = self.harness.runs.touch_monitoring_subscription(
+            subscription_id, datetime.now(timezone.utc).isoformat(), int(snapshot.get("trigger_count", 0))
+        )
+        return {"subscription": updated, "snapshot": snapshot, "notification_status": "in_app_pending"}
+
+    def delete_monitoring_subscription(self, subscription_id: str) -> bool:
+        return self.harness.runs.delete_monitoring_subscription(subscription_id)
 
     def install_provider(
         self,
@@ -271,6 +351,11 @@ class ForesightRuntime:
         return await self.tasks[task_id]
 
     def _validate_request_mode(self, request: ResearchRequest) -> None:
+        if request.market.upper() not in MARKET_PROFILES:
+            raise UnsupportedResearchModeError(
+                f"Unsupported target market: {request.market.upper()}. "
+                f"Choose one of: {', '.join(sorted(MARKET_PROFILES))}."
+            )
         if request.mode in self.supported_modes:
             if request.mode != "real":
                 return
@@ -314,6 +399,11 @@ class ForesightRuntime:
         for key in ("decision_cards_draft", "decision_cards"):
             if isinstance(snapshot.get(key), list):
                 snapshot[key] = [DecisionCard.model_validate(item) for item in snapshot[key]]
+        # The contract is read back by _execute_in_storage, which stamps task_id
+        # onto it. Left as a dict it would blow up there and turn every resume of
+        # a run that already compiled into a failed task.
+        if isinstance(snapshot.get("decision_contract"), dict):
+            snapshot["decision_contract"] = DecisionContract.model_validate(snapshot["decision_contract"])
         board.artifacts = snapshot
         return board
 
@@ -374,6 +464,7 @@ class ForesightRuntime:
             task_id=task_id,
             trace_id=trace_id,
             node=node,
+            agents=NODE_AGENTS.get(node, ()),
             input_value={
                 "request": request.model_dump(mode="json"),
                 "workflow_version": self.workflow_version,
@@ -383,6 +474,30 @@ class ForesightRuntime:
             },
             operation=operation,
         )
+
+    def _skills_from_patch(self, skill_patch: dict[str, Any]) -> list[dict[str, Any]]:
+        """Reconstruct a skill display list from the stored skill_patch.
+
+        Return value is compatible with ``skills.retrieve_for_research()`` output
+        so the UI and event payloads work unchanged.
+        """
+        skills: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for source in (skill_patch.get("applied") or {}, skill_patch.get("deferred") or {}):
+            for ref in source:
+                name, _, version = ref.partition("@")
+                if name not in seen:
+                    seen.add(name)
+                    skills.append({
+                        "skill_id": "",
+                        "name": name,
+                        "version": version,
+                        "description": "",
+                        "evidence_policy": "",
+                        "body": "",
+                        "retrieval_score": 0.0,
+                    })
+        return skills
 
     async def _execute(
         self,
@@ -403,18 +518,40 @@ class ForesightRuntime:
         trace_id: str | None = None,
         resumed: bool = False,
     ) -> ResearchResult:
-        self._validate_request_mode(request)
         started_at = datetime.now(timezone.utc)
         trace_id = trace_id or self.harness.new_trace_id()
+        # Retrieval is deterministic for a (category, market) pair, so it runs
+        # before the run's component snapshot instead of after the analysis node.
+        # A retrieved skill's evidence_policy changes what the publication gate
+        # accepts, so it belongs inside the fingerprinted policy rather than
+        # applied behind the fingerprint's back.
+        skill_patch: dict[str, Any] = {}
         existing_run = self.harness.runs.get_run(task_id)
         if existing_run and existing_run.get("component_snapshot"):
             component_snapshot = self.harness.component_snapshot_for_task(task_id)
             self._ensure_snapshot_plugins(component_snapshot)
+            # A resumed run reuses the patch its run started with, so a restored
+            # node sees the same policy it was computed under and is not re-run.
+            skill_patch = dict(component_snapshot.policy.get("skill_patch") or {})
+            # Rebuild skill display from the stored patch so the UI shows what
+            # the gate actually applied, not a fresh (potentially different) retrieval.
+            retrieved_skills = self._skills_from_patch(skill_patch)
         else:
+            retrieved_skills = self.skills.retrieve_for_research(
+                request.category, request.market, request.mode
+            )
             active_policy = self.evolution.active_policy()
+            effective_policy = dict(active_policy["policy"])
+            skill_patch = self.skills.apply_evidence_policies(
+                retrieved_skills, effective_policy, request.mode
+            )
             component_snapshot = self.harness.create_component_snapshot(
                 ScopeContext(task_id=task_id),
-                {"version": active_policy["version"], "policy": active_policy["policy"]},
+                {
+                    "version": active_policy["version"],
+                    "policy": effective_policy,
+                    "skill_patch": skill_patch,
+                },
             )
         fingerprint = stable_hash(
             {
@@ -447,21 +584,22 @@ class ForesightRuntime:
         try:
             for node in ("collect", "analyze", "compile", "validate"):
                 await self._execute_node(task_id, trace_id, request, board, node)
-                if node == "analyze":
-                    retrieved = self.skills.retrieve_for_research(
-                        request.category, request.market, request.mode
-                    )
-                    if retrieved:
-                        await board.publish_artifact("retrieved_skills", retrieved, "skill-bank")
-                        await board.publish_event(
-                            RuntimeEvent(
-                                EventType.SKILL_RETRIEVED,
-                                task_id,
-                                "skill-bank",
-                                f"Retrieved {len(retrieved)} skills for decision compilation",
-                                {"skills": [s["name"] for s in retrieved]},
-                            )
+                if node == "analyze" and retrieved_skills:
+                    await board.publish_artifact("retrieved_skills", retrieved_skills, "skill-bank")
+                    await board.publish_artifact("skill_policy_patch", skill_patch, "skill-bank")
+                    await board.publish_event(
+                        RuntimeEvent(
+                            EventType.SKILL_RETRIEVED,
+                            task_id,
+                            "skill-bank",
+                            f"Retrieved {len(retrieved_skills)} skills for decision compilation",
+                            {
+                                "skills": [s["name"] for s in retrieved_skills],
+                                "applied": skill_patch.get("applied", {}),
+                                "deferred": skill_patch.get("deferred", {}),
+                            },
                         )
+                    )
 
             cards = board.read("decision_cards")
             contract = board.read("decision_contract")
@@ -490,6 +628,7 @@ class ForesightRuntime:
             )
             self.results[task_id] = result
             self.harness.memory.put("research_results", task_id, result.model_dump(mode="json"))
+            self.harness.runs.set_result(task_id, result.model_dump(mode="json"))
             for card in result.cards:
                 card_payload = card.model_dump(mode="json")
                 self.card_index[card.card_id] = (task_id, card_payload)
@@ -535,6 +674,7 @@ class ForesightRuntime:
         return {
             "task_id": task_id,
             "status": status,
+            "error": run.get("error"),
             "current_node": run.get("current_node"),
             "trace_id": run["trace_id"],
             "event_count": len(board.events) if board else len(self.harness.runs.list_events(task_id)),
@@ -549,6 +689,9 @@ class ForesightRuntime:
         if result:
             return result
         stored = self.harness.memory.get("research_results", task_id)
+        if not stored:
+            run = self.harness.runs.get_run(task_id)
+            stored = run.get("result") if run else None
         if not stored:
             return None
         result = ResearchResult.model_validate(stored)
@@ -610,6 +753,7 @@ class ForesightRuntime:
         if result:
             result.cards = [DecisionCard.model_validate(card) if item.card_id == card_id else item for item in result.cards]
             self.harness.memory.put("research_results", task_id, result.model_dump(mode="json"))
+            self.harness.runs.set_result(task_id, result.model_dump(mode="json"))
         run = self.harness.runs.get_run(task_id)
         if run:
             payload = {
@@ -632,9 +776,14 @@ class ForesightRuntime:
           - Any stop gate triggers → STOP
           - Gray zone (gates not met but no stop triggered) → VALIDATE
 
+        Unit economics, if provided, act as an additional gate: negative
+        contribution margin forces VALIDATE regardless of other metrics.
+
+        ``outcome`` acts as a weak tiebreaker: in the gray zone, a user-declared
+        ``negative`` outcome pushes toward STOP while ``positive`` keeps VALIDATE.
+
         Evidence coverage "最小验证是否完成？" reflects whether the experiment
         was actually conducted (has real metrics), NOT whether results passed.
-        Human override does NOT modify evidence coverage.
         """
         stored = self.get_result(task_id)
         if not stored or not stored.contract:
@@ -647,8 +796,43 @@ class ForesightRuntime:
                 f"(current: {contract.verdict.value})"
             )
 
+        if contract.validation_submitted:
+            raise ValueError(
+                "Validation results have already been submitted for this contract. "
+                "Use /override if you need to change the verdict."
+            )
+
+        if (
+            contract.experiment_budget is not None
+            and result.actual_spend > contract.experiment_budget
+        ):
+            raise ValueError(
+                f"实际花费 ¥{result.actual_spend:.0f} 超过本次实验预算 "
+                f"¥{contract.experiment_budget:.0f}"
+            )
+
         metrics = result.metrics
         criteria = contract.promotion_criteria
+
+        # --- Unit economics gate (runs first — a broken model blocks GO) ---
+        econ_verdict: DecisionVerdict | None = None
+        econ_details: dict[str, Any] = {}
+        if result.economics is not None:
+            from .api_routes import _compute_unit_economics
+            econ = _compute_unit_economics(result.economics)
+            econ_details = {
+                "contribution_margin_pct": econ.contribution_margin_pct,
+                "contribution_profit": econ.contribution_profit,
+                "break_even_price": econ.break_even_price,
+                "landed_cost": econ.landed_cost,
+                "max_cpc_at_target_margin": econ.max_cpc_at_target_margin,
+            }
+            if econ.contribution_margin_pct < 0:
+                econ_verdict = DecisionVerdict.VALIDATE
+            # If the selling price is below break-even, demand validation cannot
+            # produce a sustainable business.
+            if result.economics.selling_price < econ.break_even_price:
+                econ_verdict = DecisionVerdict.STOP
 
         # --- Promotion gates (GO threshold) ---
         promotion_passed: list[str] = []
@@ -667,11 +851,15 @@ class ForesightRuntime:
             promotion_failed.append(f"意向率 {intent:.0%} < {criteria.min_intent_rate:.0%}")
 
         if criteria.max_cpc is not None:
-            cpc = float(metrics.get("cpc", 0))
-            if cpc <= criteria.max_cpc:
-                promotion_passed.append(f"CPC ¥{cpc:.2f} ≤ ¥{criteria.max_cpc:.2f}")
+            cpc_raw = metrics.get("cpc")
+            if cpc_raw is None:
+                promotion_failed.append("未提交 CPC，不能通过成本晋级门")
             else:
-                promotion_failed.append(f"CPC ¥{cpc:.2f} > ¥{criteria.max_cpc:.2f}")
+                cpc_value = float(cpc_raw)
+                if cpc_value <= criteria.max_cpc:
+                    promotion_passed.append(f"CPC ¥{cpc_value:.2f} ≤ ¥{criteria.max_cpc:.2f}")
+                else:
+                    promotion_failed.append(f"CPC ¥{cpc_value:.2f} > ¥{criteria.max_cpc:.2f}")
 
         if criteria.min_pain_confirmation_rate is not None:
             pain_rate = float(metrics.get("pain_confirmation_rate", 0))
@@ -680,15 +868,41 @@ class ForesightRuntime:
             else:
                 promotion_failed.append(f"痛点确认率 {pain_rate:.0%} < {criteria.min_pain_confirmation_rate:.0%}")
 
+        # --- Evidence confidence floor ---
+        snapshot = self.harness.policy_for_task(task_id) or {}
+        confidence_policy = dict(snapshot.get("policy") or {})
+        confidence_floor = float(confidence_policy.get("minimum_evidence_confidence", 0.0) or 0.0)
+        if confidence_floor > 0 and stored.cards:
+            confidence = sum(card.confidence_score for card in stored.cards) / len(stored.cards)
+            if confidence >= confidence_floor:
+                promotion_passed.append(f"证据置信度 {confidence:.0%} ≥ {confidence_floor:.0%}")
+            else:
+                promotion_failed.append(f"证据置信度 {confidence:.0%} < {confidence_floor:.0%}")
+
+        # --- Unit economics gate result ---
+        if econ_details:
+            if econ_details["contribution_margin_pct"] < 0:
+                promotion_failed.append(
+                    f"单位经济：贡献毛利 {econ_details['contribution_margin_pct']:.1f}% < 0，"
+                    f"利润 ¥{econ_details['contribution_profit']:.2f}，盈亏平衡售价 ¥{econ_details['break_even_price']:.2f}"
+                )
+                if result.economics and result.economics.selling_price < econ_details["break_even_price"]:
+                    promotion_failed.append(
+                        f"售价 ¥{result.economics.selling_price:.2f} 低于盈亏平衡价 "
+                        f"¥{econ_details['break_even_price']:.2f}，当前成本结构不可持续"
+                    )
+            elif econ_details["contribution_margin_pct"] > 0:
+                promotion_passed.append(
+                    f"单位经济：贡献毛利 {econ_details['contribution_margin_pct']:.1f}%，"
+                    f"利润 ¥{econ_details['contribution_profit']:.2f}"
+                )
+
         # --- Stop gates (abort threshold) ---
         stop_triggered: list[str] = []
 
-        # Distinguish "not submitted" from "actually 0%"
         intent_raw = metrics.get("intent_rate")
         intent_submitted = intent_raw is not None
 
-        # Only STOP when sample is large enough to be meaningful.
-        # Below stop_sample_count → VALIDATE (insufficient evidence to abort).
         if (
             intent_submitted
             and sample >= criteria.stop_sample_count
@@ -705,12 +919,35 @@ class ForesightRuntime:
         elif stop_triggered:
             system_verdict = DecisionVerdict.STOP
         else:
+            # Gray zone: outcome acts as weak tiebreaker
+            # negative → STOP (user says experiment failed, don't waste more money)
+            # positive + unit economics OK → VALIDATE (close but keep going)
+            # inconclusive → VALIDATE (default, need more data)
+            if result.outcome == "negative" and not promotion_passed:
+                system_verdict = DecisionVerdict.STOP
+            else:
+                system_verdict = DecisionVerdict.VALIDATE
+
+        # Unit economics override: a broken model trumps promotion gates
+        if econ_verdict is not None and system_verdict == DecisionVerdict.GO:
+            system_verdict = econ_verdict
+
+        # Market evidence gap guard (hybrid/real only)
+        unresolved_market_gaps = [
+            question
+            for question in contract.evidence_coverage.gaps
+            if "目标市场" in question
+        ]
+        if system_verdict == DecisionVerdict.GO and unresolved_market_gaps and stored.request.mode != "mock":
             system_verdict = DecisionVerdict.VALIDATE
+            contract.allowed_investment = (
+                contract.experiment_budget
+                if contract.experiment_budget is not None
+                else (min(round((contract.planned_investment or 10000) * 0.10, 0), 2000))
+            )
+            promotion_failed.append("目标市场证据仍不足，不能释放投入额度")
 
-        # --- Apply verdict (system_verdict is final; no hidden override) ---
-        # outcome is informational only — it never changes the verdict.
-        # To override, use POST /contracts/{id}/override.
-
+        # --- Apply verdict ---
         if system_verdict == DecisionVerdict.GO:
             contract.allowed_investment = contract.planned_investment
         elif system_verdict == DecisionVerdict.STOP:
@@ -718,10 +955,17 @@ class ForesightRuntime:
 
         contract.system_verdict = system_verdict
         contract.verdict = system_verdict
+        contract.validation_submitted = True
         contract.core_basis.append(
             f"验证结果：实际花费 ¥{result.actual_spend:.0f}，"
             f"实验结论={result.outcome}"
         )
+        if econ_details:
+            contract.core_basis.append(
+                f"单位经济：贡献毛利 {econ_details['contribution_margin_pct']:.1f}%，"
+                f"盈亏平衡 ¥{econ_details['break_even_price']:.2f}，"
+                f"目标毛利允许 CPC ¥{econ_details['max_cpc_at_target_margin']:.2f}"
+            )
         if promotion_passed:
             contract.core_basis.append("晋级门通过：" + "；".join(promotion_passed))
         if promotion_failed:
@@ -729,9 +973,7 @@ class ForesightRuntime:
         if stop_triggered:
             contract.core_basis.append("否决条件触发：" + "；".join(stop_triggered))
 
-        # --- Evidence coverage: "验证完成" = experiment was conducted ---
-        # This reflects whether real validation data exists, NOT whether it passed.
-        # Override must NOT modify this.
+        # --- Evidence coverage ---
         has_real_metrics = bool(metrics) and sample > 0
         for cp in contract.evidence_coverage.checkpoints:
             if "验证" in cp.question:
@@ -747,6 +989,7 @@ class ForesightRuntime:
         self.harness.memory.put("contracts", task_id, contract.model_dump(mode="json"))
         stored.contract = contract
         self.harness.memory.put("research_results", task_id, stored.model_dump(mode="json"))
+        self.harness.runs.set_result(task_id, stored.model_dump(mode="json"))
 
         # Trace
         run = self.harness.runs.get_run(task_id)
@@ -755,6 +998,7 @@ class ForesightRuntime:
                 "system_verdict": system_verdict.value,
                 "actual_spend": result.actual_spend,
                 "outcome": result.outcome,
+                **({"economics": econ_details} if econ_details else {}),
             }
             self.harness.trace.write(run["trace_id"], task_id, "validation.submitted", payload)
             self.harness.runs.record_event(task_id, run["trace_id"], "validation.submitted", payload, "validation")
@@ -805,6 +1049,7 @@ class ForesightRuntime:
         self.harness.memory.put("contracts", task_id, contract.model_dump(mode="json"))
         stored.contract = contract
         self.harness.memory.put("research_results", task_id, stored.model_dump(mode="json"))
+        self.harness.runs.set_result(task_id, stored.model_dump(mode="json"))
 
         # Trace
         run = self.harness.runs.get_run(task_id)
@@ -819,6 +1064,109 @@ class ForesightRuntime:
             self.harness.runs.record_event(task_id, run["trace_id"], "contract.override", payload, "override")
 
         return contract
+
+    def acknowledge_contract(self, task_id: str, operator: str = "demo-user") -> DecisionContract:
+        """Persist a human acknowledgement of the current contract decision."""
+
+        stored = self.get_result(task_id)
+        if not stored or not stored.contract:
+            raise KeyError(f"No decision contract available for task {task_id}")
+        contract = stored.contract
+        contract.acknowledged_at = datetime.now(timezone.utc)
+        contract.acknowledged_by = operator
+        contract.core_basis.append(f"人工确认：{contract.verdict.value}，操作人={operator}")
+        stored.contract = contract
+        self.harness.memory.put("contracts", task_id, contract.model_dump(mode="json"))
+        self.harness.memory.put("research_results", task_id, stored.model_dump(mode="json"))
+        self.harness.runs.set_result(task_id, stored.model_dump(mode="json"))
+        run = self.harness.runs.get_run(task_id)
+        if run:
+            payload = {"verdict": contract.verdict.value, "operator": operator}
+            self.harness.trace.write(run["trace_id"], task_id, "contract.acknowledged", payload)
+            self.harness.runs.record_event(task_id, run["trace_id"], "contract.acknowledged", payload, "acknowledgement")
+        return contract
+
+    def update_execution_task(
+        self, task_id: str, execution_task_id: str, status: str, owner: str | None = None
+    ) -> DecisionContract:
+        stored = self.get_result(task_id)
+        if not stored or not stored.contract:
+            raise KeyError(f"No decision contract available for task {task_id}")
+        contract = stored.contract
+        task = next((item for item in contract.execution_tasks if item.task_id == execution_task_id), None)
+        if task is None:
+            raise KeyError(execution_task_id)
+        task.status = status
+        if owner is not None:
+            task.owner = owner
+        stored.contract = contract
+        self.harness.memory.put("contracts", task_id, contract.model_dump(mode="json"))
+        self.harness.memory.put("research_results", task_id, stored.model_dump(mode="json"))
+        self.harness.runs.set_result(task_id, stored.model_dump(mode="json"))
+        run = self.harness.runs.get_run(task_id)
+        if run:
+            payload = {"execution_task_id": execution_task_id, "status": status, "owner": task.owner}
+            self.harness.trace.write(run["trace_id"], task_id, "execution_task.updated", payload)
+            self.harness.runs.record_event(task_id, run["trace_id"], "execution_task.updated", payload, "execution")
+        return contract
+
+    def create_execution_task(self, task_id: str, title: str, status: str = "todo",
+                              owner: str | None = None, due_at: datetime | None = None) -> DecisionContract:
+        from .models import ExecutionTask
+
+        stored = self.get_result(task_id)
+        if not stored or not stored.contract:
+            raise KeyError(f"No decision contract available for task {task_id}")
+        contract = stored.contract
+        task = ExecutionTask(title=title, status=status, owner=owner, due_at=due_at)
+        contract.execution_tasks.append(task)
+        stored.contract = contract
+        self.harness.memory.put("contracts", task_id, contract.model_dump(mode="json"))
+        self.harness.memory.put("research_results", task_id, stored.model_dump(mode="json"))
+        self.harness.runs.set_result(task_id, stored.model_dump(mode="json"))
+        run = self.harness.runs.get_run(task_id)
+        if run:
+            payload = {"execution_task_id": task.task_id, "title": title, "status": status, "owner": owner}
+            self.harness.trace.write(run["trace_id"], task_id, "execution_task.created", payload)
+            self.harness.runs.record_event(task_id, run["trace_id"], "execution_task.created", payload, "execution")
+        return contract
+
+    def record_actual_outcome(self, task_id: str, request: "ActualOutcomeRequest") -> dict[str, Any]:
+        """Close the loop: user reports what actually happened after the decision.
+
+        This feeds the calibration dashboard (how often was the system right?)
+        and gives the evolution engine real outcome data instead of synthetic fixtures.
+        """
+        from .models import ActualOutcomeRequest as Req
+
+        stored = self.get_result(task_id)
+        if not stored or not stored.contract:
+            raise KeyError(f"No decision contract available for task {task_id}")
+        contract = stored.contract
+        record = {
+            "outcome_id": str(uuid4()),
+            "task_id": task_id,
+            "contract_id": contract.contract_id,
+            "system_verdict": (contract.system_verdict or contract.verdict).value,
+            "actual_revenue": request.actual_revenue,
+            "actual_profit": request.actual_profit,
+            "actual_roi_pct": request.actual_roi_pct,
+            "verdict_was_correct": request.verdict_was_correct,
+            "notes": request.notes,
+            "operator": request.operator,
+            "reported_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.harness.memory.record_actual_outcome(record)
+        run = self.harness.runs.get_run(task_id)
+        if run:
+            self.harness.trace.write(run["trace_id"], task_id, "outcome.recorded", {
+                "verdict_was_correct": record["verdict_was_correct"],
+                "actual_roi_pct": record["actual_roi_pct"],
+            })
+        return record
+
+    def calibration_summary(self) -> dict[str, Any]:
+        return self.harness.memory.calibration_summary()
 
     def load_checkpoint(self, task_id: str) -> dict[str, Any] | None:
         return self.harness.checkpoints.load(task_id)

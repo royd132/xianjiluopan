@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from .api_dependencies import get_runtime, require_admin_access
 from .data import MockDataProvider
-from .models import OverrideRequest, ProviderReloadRequest, ResearchRequest, ReviewRequest, ValidationResultRequest
+from .models import ActualOutcomeRequest, ContractAcknowledgementRequest, DecisionContract, ExecutionTaskCreateRequest, ExecutionTaskUpdateRequest, MonitoringSubscription, MonitoringSubscriptionRequest, OverrideRequest, ProviderReloadRequest, ResearchRequest, ReviewRequest, UnitEconomicsRequest, UnitEconomicsResponse, ValidationResultRequest
 from .runtime import ForesightRuntime, UnsupportedResearchModeError
 
 
@@ -32,6 +32,9 @@ async def health(runtime: RuntimeDep) -> dict:
         "active_skills": skill_counts["active"],
         "supported_modes": sorted(runtime.supported_modes),
         "scenario_capabilities": runtime.scenario_capabilities(),
+        "real_data": runtime.real_provider.data_status(),
+        "calibration": runtime.calibration_summary(),
+        "actual_outcomes": runtime.harness.memory.list_actual_outcomes(5),
         "mutation_protection": (
             "read-only"
             if os.getenv("FORESIGHT_DEMO_READ_ONLY", "").lower() in {"1", "true", "yes", "on"}
@@ -53,6 +56,78 @@ async def monitoring_snapshot(
         return runtime.monitoring_snapshot(category, market)
     except (UnsupportedResearchModeError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/monitoring/subscriptions")
+async def list_monitoring_subscriptions(runtime: RuntimeDep, workspace_id: str = "default") -> dict:
+    return {"items": runtime.list_monitoring_subscriptions(workspace_id)}
+
+
+@router.post("/monitoring/subscriptions", response_model=MonitoringSubscription, status_code=201)
+async def create_monitoring_subscription(
+    request: MonitoringSubscriptionRequest,
+    runtime: RuntimeDep,
+    _admin: AdminDep,
+) -> MonitoringSubscription:
+    try:
+        return MonitoringSubscription.model_validate(runtime.create_monitoring_subscription(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/monitoring/subscriptions/{subscription_id}/check")
+async def check_monitoring_subscription(subscription_id: str, runtime: RuntimeDep) -> dict:
+    try:
+        return runtime.check_monitoring_subscription(subscription_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Monitoring subscription not found") from exc
+    except UnsupportedResearchModeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete("/monitoring/subscriptions/{subscription_id}", status_code=204)
+async def delete_monitoring_subscription(subscription_id: str, runtime: RuntimeDep, _admin: AdminDep) -> None:
+    if not runtime.delete_monitoring_subscription(subscription_id):
+        raise HTTPException(status_code=404, detail="Monitoring subscription not found")
+
+
+@router.get("/data/status")
+async def data_status(runtime: RuntimeDep) -> dict:
+    """Expose source readiness so the UI can explain live vs cached evidence."""
+
+    return runtime.real_provider.data_status()
+
+
+def _compute_unit_economics(request: UnitEconomicsRequest) -> UnitEconomicsResponse:
+    base = request.product_cost + request.packaging_cost + request.domestic_shipping + request.international_shipping
+    duties = base * request.duty_rate_pct / 100
+    vat = (base + duties) * request.vat_rate_pct / 100
+    fee_rate = (request.platform_fee_rate_pct + request.payment_fee_rate_pct) / 100
+    return_rate = request.return_rate_pct / 100
+    fees = request.selling_price * fee_rate
+    return_reserve = request.selling_price * return_rate
+    fixed_cost = base + duties + vat + request.ad_cost_per_order
+    profit = request.selling_price - fixed_cost - fees - return_reserve
+    margin = profit / request.selling_price * 100
+    denominator = max(0.01, 1 - fee_rate - return_rate)
+    break_even = (base + duties + vat + request.ad_cost_per_order) / denominator
+    max_cpc = max(0.0, request.selling_price * (1 - request.target_margin_pct / 100 - fee_rate - return_rate) - (base + duties + vat))
+    return UnitEconomicsResponse(
+        landed_cost=round(base + duties + vat, 2),
+        duties=round(duties, 2),
+        vat=round(vat, 2),
+        platform_and_payment_fees=round(fees, 2),
+        return_reserve=round(return_reserve, 2),
+        contribution_profit=round(profit, 2),
+        contribution_margin_pct=round(margin, 2),
+        break_even_price=round(break_even, 2),
+        max_cpc_at_target_margin=round(max_cpc, 2),
+    )
+
+
+@router.post("/economics/calculate", response_model=UnitEconomicsResponse)
+async def calculate_unit_economics(request: UnitEconomicsRequest) -> UnitEconomicsResponse:
+    return _compute_unit_economics(request)
 
 
 @router.get("/runtime/extensions")
@@ -98,6 +173,32 @@ async def research_status(task_id: str, runtime: RuntimeDep) -> dict:
         raise HTTPException(status_code=404, detail="Task not found") from exc
     result = runtime.get_result(task_id)
     return {**status, "result": result.model_dump(mode="json") if result else None}
+
+
+@router.get("/research")
+async def research_history(
+    runtime: RuntimeDep,
+    workspace_id: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """List durable research runs for the decision history drawer."""
+
+    runs = runtime.harness.runs.list_runs(workspace_id=workspace_id, limit=limit)
+    return {
+        "items": [
+            {
+                "task_id": item["task_id"],
+                "status": item["status"],
+                "trace_id": item["trace_id"],
+                "started_at": item["started_at"],
+                "updated_at": item["updated_at"],
+                "error": item.get("error"),
+                "request": item["request"],
+                "result": item.get("result"),
+            }
+            for item in runs
+        ],
+    }
 
 
 @router.get("/research/{task_id}/events")
@@ -211,6 +312,64 @@ async def override_contract(
     return contract.model_dump(mode="json")
 
 
+@router.post("/contracts/{task_id}/acknowledge", status_code=200)
+async def acknowledge_contract(
+    task_id: str,
+    request: ContractAcknowledgementRequest,
+    runtime: RuntimeDep,
+    _admin: AdminDep,
+) -> dict:
+    try:
+        contract = runtime.acknowledge_contract(task_id, request.operator)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Contract not found") from exc
+    return contract.model_dump(mode="json")
+
+
+@router.patch("/contracts/{task_id}/tasks/{execution_task_id}", status_code=200)
+async def update_execution_task(
+    task_id: str,
+    execution_task_id: str,
+    request: ExecutionTaskUpdateRequest,
+    runtime: RuntimeDep,
+    _admin: AdminDep,
+) -> dict:
+    try:
+        contract = runtime.update_execution_task(task_id, execution_task_id, request.status, request.owner)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Contract or execution task not found") from exc
+    return contract.model_dump(mode="json")
+
+
+@router.post("/contracts/{task_id}/tasks", response_model=DecisionContract, status_code=201)
+async def create_execution_task(
+    task_id: str,
+    request: ExecutionTaskCreateRequest,
+    runtime: RuntimeDep,
+    _admin: AdminDep,
+) -> dict:
+    try:
+        contract = runtime.create_execution_task(
+            task_id, request.title, request.status, request.owner, request.due_at
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Contract or execution task not found") from exc
+    return contract.model_dump(mode="json")
+
+
+@router.post("/contracts/{task_id}/outcome", status_code=201)
+async def record_actual_outcome(
+    task_id: str,
+    request: ActualOutcomeRequest,
+    runtime: RuntimeDep,
+    _admin: AdminDep,
+) -> dict:
+    try:
+        return runtime.record_actual_outcome(task_id, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Contract not found") from exc
+
+
 @router.get("/evolution")
 async def evolution_status(runtime: RuntimeDep) -> dict:
     status = runtime.evolution.status()
@@ -238,6 +397,14 @@ async def activate_evolution_policy(
         raise HTTPException(status_code=404, detail="Policy version not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/evolution/relax", status_code=201)
+async def relax_evolution_policy(runtime: RuntimeDep, _admin: AdminDep) -> dict:
+    candidate = runtime.evolution.generate_relaxation_candidate()
+    if candidate is None:
+        raise HTTPException(status_code=409, detail="Current policy is already at baseline or open failures exist")
+    return candidate
 
 
 @router.post("/evolution/rollback")

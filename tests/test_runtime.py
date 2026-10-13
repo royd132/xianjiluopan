@@ -1,16 +1,23 @@
 import asyncio
 import csv
 import json
+import os
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 
 from foresight.events import CollaborationBlackboard
 from foresight.data import MockDataProvider
-from foresight.models import CardType, DecisionVerdict, OverrideRequest, ResearchRequest, ReviewRequest, ValidationResultRequest
+from foresight.evolution import WorkflowReplayEvaluator
+from foresight.models import CardType, DecisionContract, DecisionVerdict, MonitoringSubscriptionRequest, OverrideRequest, ResearchRequest, ReviewRequest, ValidationResultRequest
 from foresight.policy import DEFAULT_POLICY, evaluate_decision_cards
 from foresight.real_data_provider import RealDataProvider
-from foresight.runtime import ForesightRuntime, UnsupportedResearchModeError
+from foresight.runtime import NODE_AGENTS, ForesightRuntime, UnsupportedResearchModeError
+
+
+FIXTURE_FX_LATEST = datetime.now(timezone.utc).date()
+FIXTURE_FX_PREVIOUS = FIXTURE_FX_LATEST - timedelta(days=30)
 
 
 class FakeGroundedExtractor:
@@ -50,8 +57,8 @@ def build_public_dataset_fixture(root):
         with (root / "fx" / filename).open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
             writer.writerow(["date", f"rate_{quote}"])
-            writer.writerow(["2026-07-01", 5.0])
-            writer.writerow(["2026-08-20", 5.1])
+            writer.writerow([FIXTURE_FX_PREVIOUS.isoformat(), 5.0])
+            writer.writerow([FIXTURE_FX_LATEST.isoformat(), 5.1])
     review_rows = [
         {
             "rating": 2,
@@ -106,6 +113,38 @@ def test_offline_runtime_generates_four_valid_cards(tmp_path):
         assert all(any(item.language != "en" for item in card.evidences) for card in result.cards)
         assert result.evidence_count == 5
         assert runtime.load_checkpoint(result.task_id)["stage"] == "validated"
+
+    asyncio.run(scenario())
+
+
+def test_br_olist_reviews_fill_an_empty_amazon_cache(tmp_path):
+    provider = RealDataProvider(tmp_path)
+    provider.reviews_dir.mkdir(parents=True)
+    (provider.reviews_dir / "Pet_Supplies.sample.jsonl").write_text("", encoding="utf-8")
+    provider._olist_market_data = lambda _category: {
+        "reviews": [
+            {"record_id": "olist-1", "rating": 2, "title": "", "text": "faz barulho"},
+            {"record_id": "olist-2", "rating": 3, "title": "", "text": "difícil limpar"},
+        ],
+    }
+
+    rows = provider._relevant_reviews("pet_feeder", "BR")
+
+    assert len(rows) == 2
+    assert rows[0]["_source_name"] == "Olist public dataset"
+
+
+def test_grounded_pain_points_preserve_review_languages(tmp_path):
+    async def scenario():
+        provider = RealDataProvider(tmp_path, model_adapter=FakeGroundedExtractor())
+        points = await provider._llm_pain_points(
+            "宠物自动喂食器",
+            [
+                {"rating": 2, "text": "faz barulho", "language": "pt", "record_id": "olist-1"},
+                {"rating": 3, "text": "difícil limpar", "language": "pt", "record_id": "olist-2"},
+            ],
+        )
+        assert points[0].languages == ["pt"]
 
     asyncio.run(scenario())
 
@@ -198,7 +237,7 @@ def test_real_evidence_preserves_observation_time_and_market_scope(tmp_path):
             for item in evidences
             if item.market_scope == "cross_market" and item.source_type == "review"
         )
-        assert fx.observed_at.date().isoformat() == "2026-08-20"
+        assert fx.observed_at.date() == FIXTURE_FX_LATEST
         assert fx.market_scope == "target_market"
         assert amazon_review.freshness_class == "historical"
         assert amazon_review.source_market == "global"
@@ -235,7 +274,7 @@ def test_monitoring_snapshot_reports_manual_status_and_real_observation_dates(tm
     assert snapshot["schedule_status"] == "manual_snapshot"
     assert snapshot["capability"]["real_available"] is True
     signals = {item["key"]: item for item in snapshot["signals"]}
-    assert signals["fx"]["observed_at"] == "2026-08-20"
+    assert signals["fx"]["observed_at"] == FIXTURE_FX_LATEST.isoformat()
     assert signals["trade"]["observed_at"] == "2025"
     assert snapshot["trigger_count"] >= 0
 
@@ -324,6 +363,22 @@ def test_rejected_card_creates_gated_policy_candidate(tmp_path):
     asyncio.run(scenario())
 
 
+def test_replay_dataset_makes_a_staleness_directive_decidable():
+    """A skill can only be evaluated if some case turns on its directive.
+
+    The fixtures declare ``evidence_age_days``, but with no freshness class the
+    gate skipped its observation-age clock entirely: an age threshold could not
+    change any outcome, so every skill candidate scored as a no-op against its
+    baseline and was promoted.
+    """
+    evaluator = WorkflowReplayEvaluator()
+    default = evaluator.run(DEFAULT_POLICY, "holdout")
+    stricter = evaluator.run(dict(DEFAULT_POLICY, maximum_evidence_age_days=30), "holdout")
+
+    assert stricter["accuracy"] > default["accuracy"]
+    assert stricter["false_publish_rate"] < default["false_publish_rate"]
+
+
 def test_hot_reloaded_provider_only_affects_new_tasks(tmp_path):
     async def scenario():
         runtime = ForesightRuntime(tmp_path / ".foresight")
@@ -396,6 +451,40 @@ def test_runtime_resumes_from_completed_nodes(tmp_path):
     asyncio.run(scenario())
 
 
+def test_a_restarted_run_resumes_on_the_same_skill_patched_policy(tmp_path):
+    """The skill patch lives inside the run's component snapshot, so a restart
+    restores the node it was computed under instead of recompiling under a
+    different gate."""
+
+    async def scenario():
+        workdir = tmp_path / ".foresight"
+        request = ResearchRequest(category="pet feeder", market="BR")
+        runtime = ForesightRuntime(workdir)
+        for skill in runtime.skill_store.list_all():
+            runtime.skill_store.save(skill.model_copy(update={"status": "ready"}))
+            runtime.skill_store.activate(skill.skill_id)
+        first = await runtime.run(request)
+        assert [card.confidence_score for card in first.cards] == [0.68, 0.77, 0.8, 0.57]
+
+        restarted = ForesightRuntime(workdir)
+        board = restarted._board_from_checkpoint(first.task_id, restarted.load_checkpoint(first.task_id))
+        # The restarted process rebuilds the run's policy from the stored
+        # snapshot, so its gate is the docking one even though it never
+        # retrieved anything itself.
+        assert restarted.component_snapshot(first.task_id)["policy"]["skill_patch"]["applied"]
+        assert restarted.harness.policy_for_task(first.task_id)["policy"]["confidence_penalty"] == 0.05
+        await restarted._execute_node(first.task_id, first.trace_id, request, board, "compile")
+
+        restored = [
+            event["node"]
+            for event in restarted.run_events(first.task_id)
+            if event["kind"] == "node.restored"
+        ]
+        assert restored == ["compile"], "the patched node input must hash the same after a restart"
+
+    asyncio.run(scenario())
+
+
 def test_checkpoint_idempotency_prevents_duplicate_results(tmp_path):
     """Running the same request twice returns the same task structure, not duplicates."""
 
@@ -434,6 +523,33 @@ def test_cancelled_task_records_state_and_allows_resume(tmp_path):
 
         runtime.cancel_task(task_id)
         assert runtime.harness.runs.get_run(task_id)["status"] == "cancel_requested"
+
+    asyncio.run(scenario())
+
+
+def test_a_cancelled_run_resumes_into_a_completed_task(tmp_path):
+    """Cancel then resume must finish, not fail on the restored contract.
+
+    The checkpoint serializes the board, so a resumed run reads decision_contract
+    back as a plain dict. The runtime stamps task_id onto it, which only works
+    when the board restores it as a DecisionContract.
+    """
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        request = ResearchRequest(category="pet feeder", market="BR")
+        task_id = runtime.create_task(request)
+        await asyncio.sleep(0.2)
+        runtime.cancel_task(task_id)
+        await asyncio.sleep(0.2)
+
+        assert runtime.status(task_id)["recoverable"] is True
+        runtime.resume_task(task_id)
+        result = await runtime.tasks[task_id]
+
+        assert runtime.status(task_id)["status"] == "completed"
+        assert len(result.cards) == 4
+        assert result.contract is not None
 
     asyncio.run(scenario())
 
@@ -509,6 +625,65 @@ def test_contract_first_run_always_validate_never_go(tmp_path):
     asyncio.run(scenario())
 
 
+def test_contract_requires_target_market_evidence_checkpoint(tmp_path):
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+        checkpoint = next(
+            cp for cp in result.contract.evidence_coverage.checkpoints
+            if "目标市场" in cp.question
+        )
+        assert checkpoint.status == "gap"
+        assert "BR" in checkpoint.basis
+
+    asyncio.run(scenario())
+
+
+def test_validation_cannot_exceed_experiment_budget(tmp_path):
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+        with pytest.raises(ValueError, match="超过本次实验预算"):
+            runtime.submit_validation_result(
+                result.task_id,
+                ValidationResultRequest(
+                    actual_spend=2001,
+                    metrics={"sample_count": 35, "intent_rate": 0.18},
+                    outcome="positive",
+                ),
+            )
+
+    asyncio.run(scenario())
+
+
+def test_validation_rejects_out_of_range_rates():
+    with pytest.raises(ValueError, match="intent_rate"):
+        ValidationResultRequest(
+            actual_spend=100,
+            metrics={"sample_count": 30, "intent_rate": 1.2},
+        )
+
+
+def test_real_pain_opportunity_does_not_inflate_tiny_samples(tmp_path):
+    from foresight.real_data_provider import _opportunity_index
+
+    assert _opportunity_index(1, 3, 0.6) < 0.5
+    assert _opportunity_index(3, 3, 1.0) == 1.0
+
+
+def test_real_review_sampling_does_not_start_with_only_low_ratings():
+    from foresight.real_data_provider import RealDataProvider
+
+    rows = [{"rating": 1, "helpful_vote": 100 - i} for i in range(8)]
+    rows += [{"rating": 5, "helpful_vote": 1} for _ in range(2)]
+    sampled = RealDataProvider._balanced_review_sample(rows)
+    assert [row["rating"] for row in sampled[:4]] == [5, 1, 5, 1]
+
+
 def test_contract_metrics_pass_promotes_to_go(tmp_path):
     """When validation metrics exceed all promotion gates, verdict becomes GO."""
 
@@ -533,6 +708,45 @@ def test_contract_metrics_pass_promotes_to_go(tmp_path):
         assert contract.human_override is None
 
     asyncio.run(scenario())
+
+
+def test_confidence_floor_lets_the_policy_dock_change_an_outcome(tmp_path):
+    """The dock must be able to change a decision, not just the displayed score.
+
+    Same experiment, same passing metrics: with no dock the contract promotes to
+    GO and releases the full budget; once the policy docks card confidence below
+    the promotion floor, the capital stays withheld.
+    """
+
+    async def scenario(penalty: float) -> DecisionContract:
+        runtime = ForesightRuntime(tmp_path / f".foresight-penalty-{penalty}")
+        policy = dict(DEFAULT_POLICY)
+        policy["confidence_penalty"] = penalty
+        policy["minimum_evidence_confidence"] = 0.70
+        runtime.harness.memory.save_policy(f"policy-{penalty}", policy, "ready", None)
+        runtime.harness.memory.activate_policy(f"policy-{penalty}")
+
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+        assert result.contract.verdict == DecisionVerdict.VALIDATE
+        return runtime.submit_validation_result(
+            result.task_id,
+            ValidationResultRequest(
+                actual_spend=1800,
+                metrics={"sample_count": 35, "intent_rate": 0.18, "pain_confirmation_rate": 0.40},
+                outcome="positive",
+            ),
+        )
+
+    promoted = asyncio.run(scenario(0.0))
+    assert promoted.verdict == DecisionVerdict.GO
+    assert promoted.allowed_investment == 30000
+
+    docked = asyncio.run(scenario(0.20))
+    assert docked.verdict == DecisionVerdict.VALIDATE
+    assert docked.allowed_investment != 30000
+    assert any("证据置信度" in item for item in docked.core_basis)
 
 
 def test_contract_metrics_fail_stops(tmp_path):
@@ -724,3 +938,313 @@ def test_contract_human_override_recorded(tmp_path):
         assert "STOP" in validation_cp2.basis
 
     asyncio.run(scenario())
+
+
+def test_evidence_collected_at_tracks_the_snapshot_not_the_report(tmp_path):
+    """A dataset fetched months ago must not look freshly collected.
+
+    ``collected_at`` used to be stamped with the moment the report was
+    assembled, which made the cache-expiry gate impossible to ever trigger.
+    Amazon metadata has a slow enough cadence that a 200-day-old file is still
+    inside its cache budget, so the run completes and we can read the stamp.
+    """
+
+    datasets = tmp_path / "datasets"
+    build_public_dataset_fixture(datasets)
+    provider = RealDataProvider(datasets, model_adapter=FakeGroundedExtractor())
+
+    assert provider.cache_age_report()["amazon_metadata"] == 0
+    assert provider.stale_caches() == []
+
+    fetched_epoch = (datetime.now(timezone.utc) - timedelta(days=200)).timestamp()
+    os.utime(
+        datasets / "amazon_metadata" / "Pet_Supplies.relevant.jsonl",
+        (fetched_epoch, fetched_epoch),
+    )
+
+    assert provider.cache_age_report()["amazon_metadata"] >= 199
+    assert provider.stale_caches() == []
+
+    result = asyncio.run(
+        ForesightRuntime(
+            tmp_path / ".foresight", datasets_dir=datasets, real_provider=provider
+        ).run(ResearchRequest(category="pet feeder", market="BR", mode="real"))
+    )
+    price_evidence = next(
+        evidence
+        for evidence in result.cards[0].evidences
+        if evidence.source_name.startswith("Amazon Reviews 2023 · product metadata")
+    )
+    assert price_evidence.collected_at < datetime.now(timezone.utc) - timedelta(days=199)
+
+
+def test_expired_dataset_cache_fails_loudly_with_the_remedy(tmp_path):
+    """Past its refresh budget the snapshot is an operational failure, not a report.
+
+    This is the check that previously could never fire, so a rotting dataset
+    directory surfaced as a confusing "stale evidence" refusal instead.
+    """
+
+    datasets = tmp_path / "datasets"
+    build_public_dataset_fixture(datasets)
+    provider = RealDataProvider(datasets, model_adapter=FakeGroundedExtractor())
+
+    fetched_epoch = (datetime.now(timezone.utc) - timedelta(days=200)).timestamp()
+    os.utime(datasets / "freight" / "gscpi_monthly.csv", (fetched_epoch, fetched_epoch))
+
+    assert any(item.startswith("gscpi:") for item in provider.stale_caches())
+
+    runtime = ForesightRuntime(
+        tmp_path / ".foresight", datasets_dir=datasets, real_provider=provider
+    )
+    with pytest.raises(ValueError, match="expired local cache"):
+        asyncio.run(runtime.run(ResearchRequest(category="pet feeder", market="BR", mode="real")))
+
+
+def test_collect_node_budget_covers_the_real_data_tool_timeout(tmp_path):
+    """A node timeout below the tool timeout turns a slow tool into a retry storm."""
+
+    datasets = tmp_path / "datasets"
+    build_public_dataset_fixture(datasets)
+    provider = RealDataProvider(datasets, model_adapter=FakeGroundedExtractor())
+    runtime = ForesightRuntime(tmp_path / ".foresight", datasets_dir=datasets, real_provider=provider)
+
+    for tool_name in ("hybrid_data", "real_data"):
+        tool_timeout = runtime.harness.tools.get(tool_name, "collector").timeout_seconds
+        assert runtime.harness.node_timeout_seconds(NODE_AGENTS["collect"]) >= tool_timeout
+
+    # Nodes that only reshape in-memory artifacts do not inherit the data budget.
+    assert runtime.harness.node_timeout_seconds(NODE_AGENTS["validate"]) < 120
+
+
+# ---------------------------------------------------------------------------
+# Contract acknowledgement & execution tasks
+# ---------------------------------------------------------------------------
+
+
+def test_acknowledge_contract_stamps_audit_record(tmp_path):
+    """Acknowledging a STOP contract records operator and timestamp."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+        contract = runtime.acknowledge_contract(result.task_id, operator="buyer-1")
+
+        assert contract.acknowledged_by == "buyer-1"
+        assert contract.acknowledged_at is not None
+        assert any("人工确认" in item for item in contract.core_basis)
+        assert any("buyer-1" in item for item in contract.core_basis)
+
+    asyncio.run(scenario())
+
+
+def test_acknowledge_contract_rejects_missing_task(tmp_path):
+    runtime = ForesightRuntime(tmp_path / ".foresight")
+    with pytest.raises(KeyError, match="No decision contract"):
+        runtime.acknowledge_contract("nonexistent-task-id")
+
+
+def test_update_execution_task_changes_status(tmp_path):
+    """Execution task status transitions are persisted and traceable."""
+
+    async def scenario():
+        runtime = ForesightRuntime(tmp_path / ".foresight")
+        result = await runtime.run(
+            ResearchRequest(category="pet feeder", market="BR", planned_investment=30000)
+        )
+        # Add an execution task manually
+        from foresight.models import ExecutionTask
+        contract = result.contract
+        contract.execution_tasks.append(
+            ExecutionTask(title="Test task", status="todo")
+        )
+        runtime.harness.memory.put("contracts", result.task_id, contract.model_dump(mode="json"))
+
+        task = contract.execution_tasks[0]
+        updated = runtime.update_execution_task(
+            result.task_id, task.task_id, "in_progress", owner="ops-team"
+        )
+
+        found = next(
+            item for item in updated.execution_tasks if item.task_id == task.task_id
+        )
+        assert found.status == "in_progress"
+        assert found.owner == "ops-team"
+
+    asyncio.run(scenario())
+
+
+def test_update_execution_task_rejects_missing(tmp_path):
+    runtime = ForesightRuntime(tmp_path / ".foresight")
+    with pytest.raises(KeyError, match="No decision contract"):
+        runtime.update_execution_task("nonexistent", "task-1", "done")
+
+
+# ---------------------------------------------------------------------------
+# Monitoring subscriptions
+# ---------------------------------------------------------------------------
+
+
+def test_create_and_list_monitoring_subscriptions(tmp_path):
+    runtime = ForesightRuntime(tmp_path / ".foresight")
+
+    sub = runtime.create_monitoring_subscription(
+        MonitoringSubscriptionRequest(
+            category="pet feeder", market="BR", cadence="weekly", channels=["in_app"]
+        )
+    )
+    assert sub["subscription_id"]
+    assert sub["market"] == "BR"
+
+    items = runtime.list_monitoring_subscriptions("default")
+    assert any(item["subscription_id"] == sub["subscription_id"] for item in items)
+
+
+def test_delete_monitoring_subscription_soft_deletes(tmp_path):
+    runtime = ForesightRuntime(tmp_path / ".foresight")
+
+    sub = runtime.create_monitoring_subscription(
+        MonitoringSubscriptionRequest(category="pet feeder", market="BR")
+    )
+    assert runtime.delete_monitoring_subscription(sub["subscription_id"]) is True
+    assert runtime.delete_monitoring_subscription(sub["subscription_id"]) is False
+
+    items = runtime.list_monitoring_subscriptions("default")
+    assert not any(item["subscription_id"] == sub["subscription_id"] for item in items)
+
+
+def test_check_monitoring_subscription_updates_timestamp(tmp_path):
+    runtime = ForesightRuntime(tmp_path / ".foresight")
+    sub = runtime.create_monitoring_subscription(
+        MonitoringSubscriptionRequest(category="pet feeder", market="BR")
+    )
+
+    result = runtime.check_monitoring_subscription(sub["subscription_id"])
+    assert "snapshot" in result
+    assert result["subscription"]["last_checked_at"] is not None
+    assert result["notification_status"] == "in_app_pending"
+
+
+def test_mock_monitoring_snapshot_falls_back_when_hybrid_unavailable(tmp_path):
+    runtime = ForesightRuntime(tmp_path / ".foresight", datasets_dir=tmp_path / "empty-datasets")
+    snapshot = runtime.monitoring_snapshot("pet feeder", "BR")
+
+    assert snapshot["schedule_status"] == "mock_fallback"
+    assert len(snapshot["signals"]) == 3
+    assert snapshot["market"] == "BR"
+    assert snapshot["capability"]["hybrid_available"] is False
+
+
+# ---------------------------------------------------------------------------
+# Unit economics boundary tests
+# ---------------------------------------------------------------------------
+
+
+def test_unit_economics_zero_cost_still_calculates():
+    from foresight.models import UnitEconomicsRequest
+
+    request = UnitEconomicsRequest(
+        selling_price=100, product_cost=0, packaging_cost=0,
+        domestic_shipping=0, international_shipping=0,
+        duty_rate_pct=0, vat_rate_pct=0, platform_fee_rate_pct=10,
+        payment_fee_rate_pct=2, ad_cost_per_order=0,
+        return_rate_pct=0, target_margin_pct=20,
+    )
+    assert request.product_cost == 0
+    # Verify basic invariants
+    fee_rate = (10 + 2) / 100
+    assert fee_rate == 0.12
+    # With cost=0, profit should be price minus fees
+    expected_profit = 100 - (100 * 0.12)  # 88
+    from foresight.api_routes import calculate_unit_economics
+    import asyncio
+    result = asyncio.run(calculate_unit_economics(request))
+    assert result.contribution_profit == expected_profit
+
+
+def test_unit_economics_high_returns_erode_profit():
+    from foresight.api_routes import calculate_unit_economics
+    from foresight.models import UnitEconomicsRequest
+    import asyncio
+
+    request = UnitEconomicsRequest(
+        selling_price=200, product_cost=100, return_rate_pct=50,
+        platform_fee_rate_pct=10, payment_fee_rate_pct=2,
+    )
+    result = asyncio.run(calculate_unit_economics(request))
+    # With 50% return rate + platform fees, return_reserve = half of price
+    assert result.return_reserve == 100.0
+    assert result.contribution_profit < 0
+
+
+def test_unit_economics_break_even_covers_fixed_costs():
+    from foresight.api_routes import calculate_unit_economics
+    from foresight.models import UnitEconomicsRequest
+    import asyncio
+
+    request = UnitEconomicsRequest(
+        selling_price=100, product_cost=40, ad_cost_per_order=20,
+        platform_fee_rate_pct=20, payment_fee_rate_pct=0,
+    )
+    result = asyncio.run(calculate_unit_economics(request))
+    # Break-even must cover fixed costs + ad
+    assert result.break_even_price >= request.product_cost + request.ad_cost_per_order
+
+
+def test_unit_economics_negative_margin_at_zero_price_coverage():
+    from foresight.api_routes import calculate_unit_economics
+    from foresight.models import UnitEconomicsRequest
+    import asyncio
+
+    request = UnitEconomicsRequest(
+        selling_price=50, product_cost=40, domestic_shipping=10,
+        international_shipping=15, duty_rate_pct=20, vat_rate_pct=17,
+        platform_fee_rate_pct=15, payment_fee_rate_pct=3,
+        ad_cost_per_order=15, return_rate_pct=5,
+    )
+    result = asyncio.run(calculate_unit_economics(request))
+    assert result.contribution_margin_pct < 0
+    assert result.max_cpc_at_target_margin == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Resume skill consistency
+# ---------------------------------------------------------------------------
+
+
+def test_resumed_task_publishes_skills_from_stored_patch_not_fresh_retrieval(tmp_path):
+    """After resume, the skill display must match what the gate applied, not a
+    potentially different fresh retrieval."""
+
+    async def scenario():
+        workdir = tmp_path / ".foresight"
+        request = ResearchRequest(category="pet feeder", market="BR")
+        runtime = ForesightRuntime(workdir)
+
+        # Activate a seed skill so the first run has a non-empty patch
+        for skill in runtime.skill_store.list_all():
+            runtime.skill_store.save(skill.model_copy(update={"status": "ready"}))
+            runtime.skill_store.activate(skill.skill_id)
+
+        task_id = runtime.create_task(request)
+        result = await runtime.tasks[task_id]
+
+        # The stored patch should be non-empty
+        patch = runtime.component_snapshot(task_id)["policy"].get("skill_patch", {})
+        applied = patch.get("applied", {})
+        assert applied, "Expected at least one applied skill directive"
+
+        # Reconstruct skills from the patch — must match what a resumed run sees
+        reconstructed = runtime._skills_from_patch(patch)
+        assert len(reconstructed) > 0
+        assert all("name" in item and "version" in item for item in reconstructed)
+
+    asyncio.run(scenario())
+
+
+def test_skills_from_patch_handles_empty_patch(tmp_path):
+    runtime = ForesightRuntime(tmp_path / ".foresight")
+    assert runtime._skills_from_patch({}) == []
+    assert runtime._skills_from_patch({"applied": {}, "deferred": {}}) == []

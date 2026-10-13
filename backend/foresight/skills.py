@@ -166,6 +166,21 @@ class SkillStore:
                 ),
             )
 
+    def rollbackable_names(self) -> set[str]:
+        """Names with a parent version to restore.
+
+        Mirrors the query rollback() runs: a name is rollbackable once two
+        active/retired rows share it. The UI needs this to disable the button
+        instead of letting the operator click into a guaranteed 409.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""SELECT name, COUNT(*) AS versions FROM skills
+                WHERE status IN ('{SkillStatus.ACTIVE}','{SkillStatus.RETIRED}')
+                GROUP BY name HAVING versions >= 2"""
+            ).fetchall()
+        return {row["name"] for row in rows}
+
     def get(self, skill_id: str) -> SkillArtifact | None:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM skills WHERE skill_id=?", (skill_id,)).fetchone()
@@ -310,6 +325,36 @@ class SkillStore:
 # ---------------------------------------------------------------------------
 # BM25 Retrieval
 # ---------------------------------------------------------------------------
+
+# A research task retrieves against its *decision context*: the card types the
+# compiler is about to emit, plus the evidence dimensions the publication gate
+# checks. A product-name query such as "pet feeder BR" is a token match against
+# nothing — no decision check is scoped to a product — which is how the bank
+# ended up being wired into the pipeline but never actually retrieved from.
+DECISION_CONTEXT_TERMS = (
+    "product selection pricing competitive private domain "
+    "evidence source freshness stale recompute validation sample"
+)
+
+# Directives that assert primary or verified sources. The gate runs a structural
+# profile in mock mode (``mock-structure`` in agents.SafetyEvaluationAgent)
+# precisely because the mock provider collects no primary sources, so these
+# cannot be executed there. They are recorded as deferred rather than silently
+# dropped, so the card still shows the requirement and why it did not apply.
+PROFILE_BOUND_DIRECTIVES = frozenset(
+    {"require_minimum_source_evidence", "require_minimum_verified"}
+)
+
+# What each directive asks a card to keep watching. The compiler turns every
+# applied directive into a failure condition, so a retrieved skill leaves an
+# executable check on the card instead of a name in its metadata.
+DIRECTIVE_CHECKS: dict[str, tuple[str, str]] = {
+    "require_minimum_source_evidence": ("一手来源证据条数", "≥{value}"),
+    "require_minimum_verified": ("已核验证据条数", "≥{value}"),
+    "require_max_evidence_age_days": ("最老观测距今天数", "≤{value}"),
+    "apply_confidence_penalty": ("证据支撑与发布置信度的差额", "≥{value}"),
+}
+
 
 class SkillRetrieval:
     """Lightweight BM25 keyword retrieval over trigger keywords."""
@@ -466,7 +511,7 @@ class SkillBank:
         mode: str = "mock",
     ) -> list[dict[str, Any]]:
         """Convenience: retrieve and format skills for injection into a research task."""
-        query = f"{category} {market}"
+        query = f"{category} {market} {DECISION_CONTEXT_TERMS}"
         hits = self.retrieve(query, market=market, category=category, top_k=3)
         return [
             {
@@ -480,6 +525,48 @@ class SkillBank:
             }
             for skill, score in hits
         ]
+
+    def apply_evidence_policies(
+        self,
+        retrieved: list[dict[str, Any]],
+        policy: dict[str, Any],
+        mode: str = "mock",
+    ) -> dict[str, Any]:
+        """Fold retrieved skills' executable half into a research run's policy.
+
+        A skill is an executable directive (``evidence_policy``) plus a
+        human-readable rationale (``body``). Only the directive can be executed
+        deterministically, and this is where it stops being metadata: the policy
+        passed in is what the publication gate will read for the run, and the
+        return value records what happened to each directive so the card and the
+        run trace can show it. ``body`` is never executed.
+
+        Mutates ``policy`` in place and returns the audit record:
+
+            {"mode": "mock", "applied": {"name@version": [...]},
+             "deferred": {"name@version": ["directive (reason)"]}}
+        """
+        applied: dict[str, list[str]] = {}
+        deferred: dict[str, list[str]] = {}
+        for item in retrieved:
+            directives = [
+                directive.strip()
+                for directive in str(item.get("evidence_policy") or "").split(";")
+                if directive.strip()
+            ]
+            if not directives:
+                continue
+            reference = f'{item["name"]}@{item["version"]}'
+            for directive in directives:
+                key = directive.split(":", 1)[0].strip()
+                if mode == "mock" and key in PROFILE_BOUND_DIRECTIVES:
+                    deferred.setdefault(reference, []).append(
+                        f"{directive}（mock-structure profile 不采集一手来源，转 real 模式后生效）"
+                    )
+                    continue
+                self._apply_evidence_policy(policy, directive)
+                applied.setdefault(reference, []).append(directive)
+        return {"mode": mode, "applied": applied, "deferred": deferred}
 
     # --- Evaluation ---
 
@@ -495,9 +582,18 @@ class SkillBank:
             raise ValueError(f"Skill {skill_id} is not a candidate (status={skill.status})")
 
         evaluator = WorkflowReplayEvaluator()
-        # Baseline: default policy without skill
+        # A new version has to beat the version it would replace, not a
+        # skill-less default: against DEFAULT_POLICY a child that merely repeats
+        # its parent's directive scores as an improvement over doing nothing.
+        # Only a first version is compared against the bare default.
+        parent = self.store.get(skill.parent_id) if skill.parent_id else None
         baseline_policy = dict(DEFAULT_POLICY)
-        # Candidate: policy augmented by skill's evidence_policy
+        baseline_skill_id = None
+        if parent is not None:
+            baseline_skill_id = parent.skill_id
+            if parent.evidence_policy:
+                self._apply_evidence_policy(baseline_policy, parent.evidence_policy)
+        # Candidate: policy augmented by the candidate's own evidence_policy
         candidate_policy = dict(DEFAULT_POLICY)
         if skill.evidence_policy:
             self._apply_evidence_policy(candidate_policy, skill.evidence_policy)
@@ -520,11 +616,12 @@ class SkillBank:
             }
 
         decision = SkillStatus.READY if passed_all else SkillStatus.REJECTED
-        parent_id = skill.parent_id
         record = {
             "eval_id": str(uuid4()),
             "skill_id": skill_id,
-            "baseline_skill_id": parent_id,
+            # The skill whose directives the candidate was measured against —
+            # None means the bare default policy, i.e. nothing was replaced.
+            "baseline_skill_id": baseline_skill_id,
             "split": "combined",
             "metrics": results,
             "decision": decision,
@@ -555,11 +652,16 @@ class SkillBank:
         active = self.store.list_all(status=SkillStatus.ACTIVE)
         candidates = self.store.list_all(status=SkillStatus.CANDIDATE)
         ready = self.store.list_all(status=SkillStatus.READY)
+        # Rollback restores the second-most-recent active/retired version of a
+        # name, so the UI needs the names that actually have a parent. A retired
+        # version is not listed anywhere else in this payload.
+        rollbackable = sorted(self.store.rollbackable_names())
         return {
             "total_skills": counts["total"],
             "active_count": counts["active"],
             "candidate_count": counts["candidate"],
             "ready_count": counts["ready"],
+            "rollbackable_names": rollbackable,
             "active_skills": [
                 {"skill_id": s.skill_id, "name": s.name, "version": s.version}
                 for s in active

@@ -8,6 +8,7 @@ from foresight.extensions import (
     ToolDefinition,
     ToolRegistry,
 )
+from foresight.harness_runtime import AgentHarness
 
 
 def test_tool_registration_and_retrieval():
@@ -58,6 +59,22 @@ def test_failed_plugin_install_cleans_up_tools():
             health_check=lambda _ctx: False,
         )
     assert registry.snapshot() == {}
+
+
+def test_node_budget_covers_the_slowest_tool_the_node_can_call(tmp_path):
+    harness = AgentHarness(tmp_path / "harness")
+    harness.tools.register(
+        ToolDefinition(
+            "slow_data",
+            lambda **_: None,
+            frozenset({"collector"}),
+            timeout_seconds=120,
+        )
+    )
+
+    assert harness.node_timeout_seconds(["collector"]) >= 120
+    assert harness.node_timeout_seconds(["safety-evaluator"]) < 120
+    assert harness.tools.max_timeout_seconds() >= 120
 
 
 def test_plugin_install_and_snapshot():

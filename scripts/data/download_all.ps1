@@ -9,4 +9,5 @@ python scripts/data/download_amazon_metadata_sample.py
 python scripts/data/download_amazon_matched_reviews.py
 python scripts/data/download_multilingual_reviews.py
 python scripts/data/download_olist.py
+python scripts/data/download_repro.py
 python scripts/data/verify_datasets.py

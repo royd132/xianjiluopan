@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import math
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterator
+from typing import Any, Awaitable, Callable, Iterable, Iterator
 from uuid import uuid4
 
 from .extensions import (
@@ -15,6 +16,11 @@ from .extensions import (
     ToolRegistry,
 )
 from .harness import CheckpointStore, MemoryStore, RunStore, TraceWriter, stable_hash
+
+# A node has to outlive the slowest tool it wraps, plus the bookkeeping around
+# it. A fixed node timeout below the tool timeouts silently converts a slow but
+# healthy tool into a node timeout and a retry.
+NODE_TIMEOUT_OVERHEAD_SECONDS = 30.0
 
 
 class AgentHarness:
@@ -138,6 +144,18 @@ class AgentHarness:
         self.runs.record_event(task_id, trace_id, "tool.done", summary, agent)
         return result
 
+    def node_timeout_seconds(self, agents: Iterable[str] | None = None) -> float:
+        """Node budget derived from the slowest tool that node may call.
+
+        Passing the node's agents keeps the budget honest: a node that can call
+        a 120-second data tool gets room for it, a node that only reshapes
+        in-memory artifacts does not inherit that patience.
+        """
+
+        return math.ceil(
+            self.tools.max_timeout_seconds(agents) + NODE_TIMEOUT_OVERHEAD_SECONDS
+        )
+
     async def run_node(
         self,
         task_id: str,
@@ -146,8 +164,11 @@ class AgentHarness:
         input_value: Any,
         operation: Callable[[], Awaitable[Any]],
         max_attempts: int = 2,
-        timeout_seconds: float = 45.0,
+        timeout_seconds: float | None = None,
+        agents: Iterable[str] | None = None,
     ) -> Any:
+        if timeout_seconds is None:
+            timeout_seconds = self.node_timeout_seconds(agents)
         if self.runs.is_cancel_requested(task_id):
             raise asyncio.CancelledError(f"Task {task_id} was cancelled")
         input_hash = stable_hash(input_value)

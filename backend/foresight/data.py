@@ -232,14 +232,45 @@ PAIN_PHRASES = {
 
 
 def resolve_market(market: str) -> dict[str, Any]:
-    return MARKET_PROFILES.get(market.upper(), MARKET_PROFILES["US"])
+    code = market.upper().strip()
+    if code not in MARKET_PROFILES:
+        raise ValueError(f"Unsupported target market: {code}")
+    return MARKET_PROFILES[code]
 
 
 def resolve_category(category: str) -> dict[str, Any]:
     normalized = category.casefold()
+    # Exact keyword match (current behavior)
     for profile in CATEGORY_PROFILES:
         if any(keyword.casefold() in normalized for keyword in profile["keywords"]):
             return profile
+
+    # Fuzzy fallback: if the input contains functional Chinese compound terms that
+    # strongly indicate a specific category, use that profile. This catches inputs
+    # like "智能猫砂盆" → pet_feeder (via "宠物" family) or "磨豆机" → coffee_grinder.
+    fuzzy_hints: dict[str, str] = {
+        # pet feeder family
+        "猫": "pet_feeder", "狗": "pet_feeder", "宠": "pet_feeder", "笼": "pet_feeder",
+        "砂盆": "pet_feeder", "零食": "pet_feeder", "牵引": "pet_feeder", "饮水": "pet_feeder",
+        # blender family
+        "榨汁": "portable_blender", "果汁": "portable_blender", "搅拌": "portable_blender",
+        "奶昔": "portable_blender", "破壁": "portable_blender", "豆浆": "portable_blender",
+        # headphone family
+        "耳机": "noise_cancelling_headphones", "降噪": "noise_cancelling_headphones",
+        "耳塞": "noise_cancelling_headphones", "无线": "noise_cancelling_headphones",
+        # coffee family
+        "咖啡": "coffee_grinder", "磨豆": "coffee_grinder", "冲泡": "coffee_grinder",
+        "手冲": "coffee_grinder", "萃取": "coffee_grinder",
+    }
+    profile_key: str | None = None
+    best_len = 0
+    for hint, key in fuzzy_hints.items():
+        if hint in normalized and len(hint) > best_len:
+            profile_key = key
+            best_len = len(hint)
+    if profile_key:
+        return next(p for p in CATEGORY_PROFILES if p["key"] == profile_key)
+
     return GENERIC_CATEGORY_PROFILE
 
 

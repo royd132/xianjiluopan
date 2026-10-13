@@ -60,6 +60,12 @@ def _replay_card(
             raw_value=f"value-{index}",
             language="pt" if index < non_english else "en",
             collected_at=FIXTURE_NOW - timedelta(days=evidence_age_days),
+            # A fixture is a decision artifact compiled from collected evidence.
+            # Without a freshness class the publication gate skips its
+            # observation-age clock entirely, which made ``evidence_age_days``
+            # decorative and left the dataset's stale cases labelled
+            # ``should_publish: false`` while the gate published them.
+            freshness_class="recent",
             confidence=0.9,
         )
         for index in range(evidence_count)
@@ -271,6 +277,52 @@ class EvolutionEngine:
         version = f"policy-v{next_number}"
         self.memory.save_policy(version, policy, "candidate", baseline["version"])
         return self.evaluate_candidate(version, [item["failure_id"] for item in failures])
+
+    def generate_relaxation_candidate(self) -> dict[str, Any] | None:
+        """Suggest relaxing the policy toward the default if no open failures remain
+        and the current policy is stricter than DEFAULT_POLICY.
+
+        Returns None when current policy is already at baseline — nothing to relax.
+        """
+        if self.memory.list_failure_cases("open"):
+            return None  # open failures → don't suggest relaxing
+        baseline = self.active_policy()
+        current = dict(baseline["policy"])
+        relaxed = dict(current)
+        changed = False
+        # Each parameter moves one step back toward DEFAULT_POLICY, never past it.
+        if current.get("minimum_evidence_count", 3) > DEFAULT_POLICY["minimum_evidence_count"]:
+            relaxed["minimum_evidence_count"] = max(
+                DEFAULT_POLICY["minimum_evidence_count"],
+                current["minimum_evidence_count"] - 1,
+            )
+            changed = True
+        if current.get("minimum_non_english_evidence", 1) > DEFAULT_POLICY["minimum_non_english_evidence"]:
+            relaxed["minimum_non_english_evidence"] = max(
+                DEFAULT_POLICY["minimum_non_english_evidence"],
+                current["minimum_non_english_evidence"] - 1,
+            )
+            changed = True
+        if current.get("maximum_evidence_age_days", 45) < DEFAULT_POLICY["maximum_evidence_age_days"]:
+            relaxed["maximum_evidence_age_days"] = min(
+                DEFAULT_POLICY["maximum_evidence_age_days"],
+                current["maximum_evidence_age_days"] + 15,
+            )
+            changed = True
+        if current.get("confidence_penalty", 0.0) > DEFAULT_POLICY["confidence_penalty"]:
+            relaxed["confidence_penalty"] = max(
+                DEFAULT_POLICY["confidence_penalty"],
+                round(current["confidence_penalty"] - 0.05, 2),
+            )
+            changed = True
+        if not changed:
+            return None  # already at baseline
+
+        versions = self.memory.list_policies()
+        next_number = max((int(item["version"].split("v")[-1]) for item in versions), default=1) + 1
+        version = f"policy-v{next_number}"
+        self.memory.save_policy(version, relaxed, "candidate", baseline["version"])
+        return self.evaluate_candidate(version)
 
     def evaluate_candidate(self, version: str, failure_ids: list[str] | None = None) -> dict[str, Any]:
         candidate = self.memory.get_policy(version)

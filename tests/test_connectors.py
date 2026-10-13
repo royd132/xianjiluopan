@@ -9,8 +9,26 @@ from foresight.providers import (
     GscpiCsvConnector,
     LsciCsvConnector,
     PublicSignalConnectors,
+    SellerSpriteConnector,
     TradeCsvConnector,
 )
+from foresight.providers.sellersprite import SellerSpriteMcpClient, _parse_mcp_payload
+
+
+class FakeHttpResponse:
+    def __init__(self, payload: dict):
+        import json
+
+        self.payload = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return self.payload
 
 
 def write_fixture(path: Path, content: str) -> None:
@@ -176,3 +194,96 @@ def test_public_signal_connectors_status_reports_partial_availability(tmp_path):
     assert status["trade"] is False
     assert status["gscpi"] is False
     assert status["lsci"] is False
+
+
+def test_sellersprite_connector_normalizes_live_product_research(monkeypatch, tmp_path):
+    payload = {
+        "code": "OK",
+        "data": {
+            "currency": "USD",
+            "items": [
+                {"asin": "A1", "title": "One", "price": "29.90", "units": 100},
+                {"asin": "A2", "title": "Two", "price": 35, "currency": "USD"},
+                {"asin": "A3", "title": "Three", "price": 41.5},
+            ],
+        },
+    }
+    monkeypatch.setattr(
+        "foresight.providers.sellersprite.urllib.request.urlopen",
+        lambda request, timeout: FakeHttpResponse(payload),
+    )
+
+    connector = SellerSpriteConnector(tmp_path / "sellersprite.json", secret_key="test-key", transport="rest")
+    result = connector.search("pet_feeder", "US")
+
+    assert connector.supports("US") is True
+    assert connector.supports("MX") is True
+    assert connector.supports("BR") is False
+    assert result["prices"] == [29.9, 35.0, 41.5]
+    assert result["listings"][0]["currency"] == "USD"
+    assert (tmp_path / "sellersprite.json").is_file()
+
+
+def test_sellersprite_connector_accepts_cli_project_key(monkeypatch, tmp_path):
+    monkeypatch.delenv("SELLERSPRITE_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SELLERSPRITE_KEY", "cli-key")
+
+    connector = SellerSpriteConnector(tmp_path / "sellersprite.json", transport="rest")
+
+    assert connector.configured is True
+
+
+def test_sellersprite_mcp_client_calls_initialize_then_tool(monkeypatch):
+    class FakeMcpResponse(FakeHttpResponse):
+        def __init__(self, payload, session_id=None):
+            super().__init__(payload)
+            self.headers = {"Mcp-Session-Id": session_id} if session_id else {}
+
+    responses = [
+        FakeMcpResponse({"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}}, "session-1"),
+        FakeMcpResponse({}, "session-1"),
+        FakeMcpResponse({"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": '{"data":{"items":[{"asin":"A1"}]}}'}]}}, "session-1"),
+    ]
+    seen = []
+
+    def fake_urlopen(request, timeout):
+        seen.append(json.loads(request.data.decode("utf-8")))
+        return responses.pop(0)
+
+    import json
+
+    monkeypatch.setattr("foresight.providers.sellersprite.urllib.request.urlopen", fake_urlopen)
+    result = SellerSpriteMcpClient("secret").call_tool("product_research", {"marketplace": "US"})
+
+    assert result["content"][0]["type"] == "text"
+    assert [item["method"] for item in seen] == ["initialize", "notifications/initialized", "tools/call"]
+    assert _parse_mcp_payload("data: {\"jsonrpc\":\"2.0\"}\n") == {"jsonrpc": "2.0"}
+
+
+def test_sellersprite_connector_keeps_a_valid_cache_when_live_result_is_thin(monkeypatch, tmp_path):
+    payloads = [
+        {
+            "code": "OK",
+            "data": {"currency": "USD", "items": [
+                {"asin": "A1", "price": 29.9},
+                {"asin": "A2", "price": 35},
+                {"asin": "A3", "price": 41.5},
+            ]},
+        },
+        {
+            "code": "OK",
+            "data": {"currency": "USD", "items": [{"asin": "A1", "price": 29.9}]},
+        },
+    ]
+
+    def fake_urlopen(request, timeout):
+        return FakeHttpResponse(payloads.pop(0))
+
+    monkeypatch.setattr("foresight.providers.sellersprite.urllib.request.urlopen", fake_urlopen)
+    connector = SellerSpriteConnector(tmp_path / "sellersprite.json", secret_key="test-key", transport="rest")
+
+    connector.search("pet_feeder", "US")
+    cached = connector.search("pet_feeder", "US")
+
+    assert cached["data_mode"] == "cached"
+    assert "fewer than three" in cached["live_error"]

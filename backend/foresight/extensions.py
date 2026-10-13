@@ -4,7 +4,7 @@ import re
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 from uuid import uuid4
 
 from .harness import stable_hash, utc_now
@@ -139,6 +139,24 @@ class ToolRegistry:
                 if not allowed:
                     raise PermissionError(f"{reason}: {name} for {agent} ({guard.guard_id})")
             return definition
+
+    def max_timeout_seconds(self, agents: Iterable[str] | None = None) -> float:
+        """Longest timeout among the tools the given agents are allowed to call.
+
+        Callers that wrap tool invocations in their own timeout use this so the
+        outer budget can never be tighter than the inner one.
+        """
+
+        with self._lock:
+            definitions = [entry[0] for entry in self._tools.values()]
+        if agents is not None:
+            scope = set(agents)
+            definitions = [
+                item
+                for item in definitions
+                if not item.allowed_agents or item.allowed_agents & scope
+            ]
+        return max((item.timeout_seconds for item in definitions), default=0.0)
 
     def snapshot(self) -> dict[str, dict[str, Any]]:
         with self._lock:

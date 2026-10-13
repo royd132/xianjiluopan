@@ -14,6 +14,7 @@ from .models import (
     DecisionCard,
     DecisionContract,
     DecisionVerdict,
+    ExecutionTask,
     EvidenceCheckpoint,
     EvidenceCoverage,
     FailureCondition,
@@ -22,6 +23,7 @@ from .models import (
     ValidationCriteria,
 )
 from .policy import DEFAULT_POLICY, evaluate_decision_cards
+from .skills import DIRECTIVE_CHECKS
 
 
 class BaseAgent(ABC):
@@ -96,6 +98,35 @@ class SupplyChainAgent(BaseAgent):
         await board.publish_artifact("supply_risk_triggered", risk, self.name)
 
 
+def _skill_failure_conditions(skill_patch: dict[str, Any]) -> list[FailureCondition]:
+    """Turn each applied skill directive into a check the card carries from now on.
+
+    Two skills asking for the same threshold produce one condition naming both,
+    rather than two identical conditions on every card.
+    """
+    grouped: dict[tuple[str, str], list[str]] = {}
+    for reference, directives in sorted((skill_patch.get("applied") or {}).items()):
+        for directive in directives:
+            key, _, value = directive.partition(":")
+            monitor = DIRECTIVE_CHECKS.get(key.strip())
+            value = value.strip()
+            if not monitor or not value:
+                continue
+            metric, threshold = monitor
+            grouped.setdefault((metric, threshold.format(value=value)), []).append(reference)
+    return [
+        FailureCondition(
+            # The contract already renders "condition（metric threshold）", so the
+            # condition text names who asked and leaves the numbers to those fields.
+            condition=f"Skill 自检未达阈值：{'、'.join(sorted(set(references)))}",
+            metric_to_watch=metric,
+            threshold=threshold,
+            action_on_trigger="recalculate",
+        )
+        for (metric, threshold), references in grouped.items()
+    ]
+
+
 class DecisionCompilerAgent(BaseAgent):
     name = "decision-compiler"
 
@@ -108,6 +139,9 @@ class DecisionCompilerAgent(BaseAgent):
             raise RuntimeError("Decision compiler is blocked on evidence, pain points and market metrics")
 
         retrieved_skills = board.read("retrieved_skills", [])
+        policy_snapshot = harness.policy_for_task(board.task_id)
+        policy = dict(policy_snapshot.get("policy") or {})
+        skill_patch = dict(policy_snapshot.get("skill_patch") or {})
         scenario = raw["scenario"]
         lead_pain = pains[0]
         anchor = metrics["anchor_price"]
@@ -117,7 +151,7 @@ class DecisionCompilerAgent(BaseAgent):
         historical_price = scenario.get("price_data_mode") == "historical_transactions"
         snapshot_price = scenario.get("price_data_mode") == "amazon_2023_listing_snapshot"
         price_symbol = scenario.get("price_currency_symbol", "US$")
-        competitor_gap_available = scenario.get("competitive_data_mode", "mock") != "not_collected"
+        competitor_gap_available = scenario.get("competitive_gap_verified", scenario.get("competitive_data_mode", "mock") != "not_collected")
         gap_limit = max(2, scenario["gap_competitors"] + 2)
         now = datetime.now(timezone.utc)
         common = {
@@ -130,7 +164,15 @@ class DecisionCompilerAgent(BaseAgent):
                 {"skill_id": s["skill_id"], "name": s["name"], "version": s["version"]}
                 for s in retrieved_skills
             ] if retrieved_skills else [],
+            # What the retrieved skills actually did to this run. The gate reads
+            # the policy these directives were merged into, so these are not a
+            # claim about a skill — they are what it contributed to the gate this
+            # card was compiled and published under.
+            "applied_skill_checks": skill_patch.get("applied", {}),
+            "deferred_skill_checks": skill_patch.get("deferred", {}),
         }
+        skill_conditions = _skill_failure_conditions(skill_patch)
+        seller_sprite_snapshot = scenario.get("seller_sprite_snapshot")
         hook = PrivateDomainHook(
             seed_audience=scenario["seed_audience"],
             channel=scenario["channel"],
@@ -151,9 +193,10 @@ class DecisionCompilerAgent(BaseAgent):
                         metric_to_watch=f'Top 10 中公开“{scenario["proof_metric"]}”的竞品数' if competitor_gap_available else f'20 个现售商品中“{scenario["proof_metric"]}”证据覆盖率',
                         threshold=f">={gap_limit}" if competitor_gap_available else ">=50%",
                         action_on_trigger="recalculate",
-                    )
+                    ),
+                    *skill_conditions,
                 ],
-                card_specific_data={"opportunity_score": metrics["blue_ocean_index"], "opportunity_score_basis": scenario.get("opportunity_score_basis", "cold-start-profile"), "opportunity_score_calibration": scenario.get("opportunity_score_calibration", "not_calibrated"), "target_market": request.market.upper(), "differentiation_point": scenario["differentiator"], "primary_pain": lead_pain.label, "mock_scope": scenario["mock_scope"], **skill_context},
+                card_specific_data={"opportunity_score": metrics["blue_ocean_index"], "opportunity_score_basis": scenario.get("opportunity_score_basis", "cold-start-profile"), "opportunity_score_calibration": scenario.get("opportunity_score_calibration", "not_calibrated"), "target_market": request.market.upper(), "differentiation_point": scenario["differentiator"], "primary_pain": lead_pain.label, "mock_scope": scenario["mock_scope"], "seller_sprite_snapshot": seller_sprite_snapshot, **skill_context},
                 **common,
             ),
             DecisionCard(
@@ -182,8 +225,8 @@ class DecisionCompilerAgent(BaseAgent):
                 confidence=ConfidenceLevel.MEDIUM if modeled_price or historical_price or snapshot_price else ConfidenceLevel.HIGH,
                 confidence_score=0.68 if modeled_price else 0.76 if snapshot_price else 0.72 if historical_price else 0.82,
                 private_domain_hook=hook,
-                failure_conditions=[FailureCondition(condition="物流成本侵蚀目标毛利", metric_to_watch=scenario["freight_metric"], threshold=">15%", action_on_trigger="recalculate")],
-                card_specific_data={"anchor_price": anchor, "price_range": [launch_low, launch_high], "gross_margin_pct": scenario["gross_margin_pct"], "gross_margin_status": scenario.get("gross_margin_status", "planning_hypothesis"), "pricing_basis": scenario["proof_metric"], "price_data_mode": scenario.get("price_data_mode", "observed"), **skill_context},
+                failure_conditions=[FailureCondition(condition="物流成本侵蚀目标毛利", metric_to_watch=scenario["freight_metric"], threshold=">15%", action_on_trigger="recalculate"), *skill_conditions],
+                card_specific_data={"anchor_price": anchor, "price_range": [launch_low, launch_high], "gross_margin_pct": scenario["gross_margin_pct"], "gross_margin_status": scenario.get("gross_margin_status", "planning_hypothesis"), "pricing_basis": scenario["proof_metric"], "price_data_mode": scenario.get("price_data_mode", "observed"), "seller_sprite_snapshot": seller_sprite_snapshot, **skill_context},
                 **common,
             ),
             DecisionCard(
@@ -191,18 +234,18 @@ class DecisionCompilerAgent(BaseAgent):
                 action_title=(
                     f'把“{scenario["proof_metric"]}”做成首屏证据，而不是泛讲{scenario["generic_promise"]}'
                     if competitor_gap_available
-                    else f'先审计 20 个现售商品，再验证“{scenario["proof_metric"]}”是否存在表达空位'
+                    else f'先审计 {seller_sprite_snapshot.get("listing_count", 20) if seller_sprite_snapshot else 20} 个现售商品，再验证“{scenario["proof_metric"]}”是否存在表达空位'
                 ),
                 action_detail=(
                     f'围绕“{lead_pain.label}”发布同条件对比、测试方法和原语用户证言，攻击 Top 10 尚未占领的表达空位。'
                     if competitor_gap_available
-                    else f'真实评论已支持“{lead_pain.label}”，但当前竞品首屏尚未取得合规数据；先完成人工/授权 listing 审计，再决定是否把“{scenario["proof_metric"]}”作为主攻表达。'
+                    else f'真实评论已支持“{lead_pain.label}”；当前已取得价格、BSR、销量和评分信号，但尚未完成首屏表达审计，先确认“{scenario["proof_metric"]}”是否存在空位。'
                 ),
                 confidence=ConfidenceLevel.HIGH if competitor_gap_available else ConfidenceLevel.MEDIUM,
                 confidence_score=0.85 if competitor_gap_available else 0.66,
                 private_domain_hook=hook,
-                failure_conditions=[FailureCondition(condition="竞品开始普遍公开同类证据", metric_to_watch=f'Top 10 “{scenario["proof_metric"]}”证据覆盖率', threshold=">=50%", action_on_trigger="watch")],
-                card_specific_data={"copy": scenario["hook_message"], "proof_metric": scenario["proof_metric"], "expression_gap_pct": max(10, (10 - scenario["gap_competitors"]) * 10) if competitor_gap_available else None, "listing_audit_required": not competitor_gap_available, "defense_actions": ["公开测试方法", f'强化{scenario["secondary_differentiator"]}', "保留原语用户证言"]},
+                failure_conditions=[FailureCondition(condition="竞品开始普遍公开同类证据", metric_to_watch=f'Top 10 “{scenario["proof_metric"]}”证据覆盖率', threshold=">=50%", action_on_trigger="watch"), *skill_conditions],
+                card_specific_data={"copy": scenario["hook_message"], "proof_metric": scenario["proof_metric"], "expression_gap_pct": max(10, (10 - scenario["gap_competitors"]) * 10) if competitor_gap_available else None, "listing_audit_required": not competitor_gap_available, "defense_actions": ["公开测试方法", f'强化{scenario["secondary_differentiator"]}', "保留原语用户证言"], "seller_sprite_snapshot": seller_sprite_snapshot, **skill_context},
                 **common,
             ),
             DecisionCard(
@@ -212,8 +255,8 @@ class DecisionCompilerAgent(BaseAgent):
                 confidence=ConfidenceLevel.MEDIUM,
                 confidence_score=0.62,
                 private_domain_hook=hook,
-                failure_conditions=[FailureCondition(condition="种子测试未形成有效兴趣", metric_to_watch="落地页购买意向率", threshold="<5%", action_on_trigger="abort")],
-                card_specific_data={"gathering_places": [scenario["community"], scenario["marketplace"]], "repurchase_signal_strength": scenario["repurchase_signal"], "repurchase_signal_status": "not_measured", "validation_sample": 30},
+                failure_conditions=[FailureCondition(condition="种子测试未形成有效兴趣", metric_to_watch="落地页购买意向率", threshold="<5%", action_on_trigger="abort"), *skill_conditions],
+                card_specific_data={"gathering_places": [scenario["community"], scenario["marketplace"]], "repurchase_signal_strength": scenario["repurchase_signal"], "repurchase_signal_status": "not_measured", "validation_sample": 30, **skill_context},
                 **common,
             ),
         ]
@@ -221,7 +264,17 @@ class DecisionCompilerAgent(BaseAgent):
 
         # --- Decision Contract ---
         supply_signals = board.read("supply_signals", [])
-        contract = self._build_contract(request, cards, evidences, pains, metrics, supply_signals, scenario)
+        contract = self._build_contract(
+            request,
+            cards,
+            evidences,
+            pains,
+            metrics,
+            supply_signals,
+            scenario,
+            confidence_penalty=float(policy.get("confidence_penalty", 0.0)),
+            applied_skill_checks=skill_patch.get("applied", {}),
+        )
         await board.publish_artifact("decision_contract", contract, self.name)
 
     @staticmethod
@@ -233,10 +286,19 @@ class DecisionCompilerAgent(BaseAgent):
         metrics: dict[str, Any],
         supply_signals: list,
         scenario: dict[str, Any],
+        confidence_penalty: float = 0.0,
+        applied_skill_checks: dict[str, Any] | None = None,
     ) -> DecisionContract:
         # Evidence coverage: 5 mandatory questions
         non_english = sum(1 for e in evidences if e.language != "en")
         verified = sum(1 for e in evidences if e.verified)
+        target_market = request.market.upper()
+        target_market_evidence = [
+            evidence
+            for evidence in evidences
+            if evidence.market_scope == "target_market"
+            and evidence.source_market == target_market
+        ]
         checkpoints = [
             EvidenceCheckpoint(
                 question="需求是否真实？",
@@ -247,6 +309,17 @@ class DecisionCompilerAgent(BaseAgent):
                 question="消费者痛点是否明确？",
                 status="pass" if pains and pains[0].opportunity_index >= 0.5 else "gap",
                 basis=f"首要痛点：{pains[0].label if pains else '未识别'}",
+            ),
+            EvidenceCheckpoint(
+                question="目标市场证据是否充分？",
+                status=(
+                    "pass" if len(target_market_evidence) >= 2
+                    else "partial" if target_market_evidence else "gap"
+                ),
+                basis=(
+                    f"{len(target_market_evidence)} 条 {target_market} 本地证据；"
+                    "跨市场或类目代理数据不计入本项"
+                ),
             ),
             EvidenceCheckpoint(
                 question="目标价格是否成立？",
@@ -266,8 +339,14 @@ class DecisionCompilerAgent(BaseAgent):
         ]
         coverage = EvidenceCoverage(checkpoints=checkpoints)
 
-        # Verdict logic
-        avg_confidence = sum(c.confidence_score for c in cards) / max(len(cards), 1)
+        # Verdict logic. The publication gate docks ``confidence_penalty`` from
+        # every card after this contract is built, so the average quoted here has
+        # to be the docked one: otherwise the confidence an operator sees on the
+        # card and the basis line under the verdict disagree, and an injected
+        # skill's penalty would show up on the card but not in the reasoning.
+        avg_confidence = sum(
+            max(0.0, c.confidence_score - confidence_penalty) for c in cards
+        ) / max(len(cards), 1)
         gap_count = len(coverage.gaps)
         if gap_count >= 3:
             verdict = DecisionVerdict.STOP
@@ -283,6 +362,7 @@ class DecisionCompilerAgent(BaseAgent):
         if verdict == DecisionVerdict.VALIDATE and planned:
             allowed = round(planned * 0.10, 0)
             experiment_budget = min(allowed, 2000)
+            allowed = experiment_budget
         elif verdict == DecisionVerdict.STOP:
             allowed = 0
             experiment_budget = None
@@ -290,11 +370,15 @@ class DecisionCompilerAgent(BaseAgent):
             allowed = planned
             experiment_budget = None
 
-        # Stop conditions from all cards
-        stop_conditions = []
+        # Stop conditions from all cards. Cards compiled under the same skill
+        # checks carry the same condition text, so identical entries collapse —
+        # the list is read as a set of conditions, not as a card inventory.
+        stop_conditions: list[str] = []
         for card in cards:
             for fc in card.failure_conditions:
-                stop_conditions.append(f"{fc.condition}（{fc.metric_to_watch} {fc.threshold}）")
+                rendered = f"{fc.condition}（{fc.metric_to_watch} {fc.threshold}）"
+                if rendered not in stop_conditions:
+                    stop_conditions.append(rendered)
 
         # Experiment design for VALIDATE
         experiment = None
@@ -312,7 +396,16 @@ class DecisionCompilerAgent(BaseAgent):
             planned_investment=planned,
             investment_stage=request.investment_stage,
             allowed_investment=allowed,
-            core_basis=[f"{len(evidences)} 条多源证据", f"平均置信度 {avg_confidence:.0%}"],
+            core_basis=[
+                f"{len(evidences)} 条多源证据",
+                f"平均置信度 {avg_confidence:.0%}",
+                *(["当前为场景化 Mock，证据用于流程演示，不代表真实市场观测"] if request.mode == "mock" else []),
+                *(
+                    [f"{len(applied_skill_checks)} 个 Skill 检查已并入本次门禁"]
+                    if applied_skill_checks
+                    else []
+                ),
+            ],
             biggest_unknown=coverage.gaps[0] if coverage.gaps else "验证结果",
             experiment_design=experiment,
             experiment_budget=experiment_budget,
@@ -328,6 +421,12 @@ class DecisionCompilerAgent(BaseAgent):
                 "竞品价格下破当前锚点 10%",
             ],
             evidence_coverage=coverage,
+            execution_tasks=[
+                ExecutionTask(title="确认供应商报价、MOQ、交期和样品费"),
+                ExecutionTask(title="完成目标市场 Listing 本地化与合规复核"),
+                ExecutionTask(title="创建最小市场验证并记录真实样本"),
+                ExecutionTask(title="验证结束后提交样本量、意向率和痛点确认率"),
+            ],
         )
 
 

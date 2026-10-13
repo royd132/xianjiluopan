@@ -352,6 +352,8 @@ $env:FORESIGHT_DEMO_READ_ONLY="true"
 
 启用令牌后，Provider 更新、任务取消/恢复、卡片复核和策略演进请求必须携带 `X-Admin-Token`。研究任务创建与只读查询保持可用。
 
+前端检测到 `mutation_protection = token` 时，会在顶栏显示「X-Admin-Token」输入框；填入密钥并点击「授权」后，工作台的写操作即可正常提交。令牌只保存在该标签页的 `sessionStorage`，**不会**打进前端产物——把它写进 `VITE_` 变量会让任何能打开页面的人从 JavaScript 里读到，后端这道写保护也就形同虚设。用 curl 或脚本调用时，仍需自行携带 `X-Admin-Token` 请求头。
+
 ## 🔌 API 与离线 CLI
 
 ### 核心接口
@@ -526,7 +528,17 @@ Mock 数据不会冒充真实发现。页面、API 和导出结果均披露数�
 - Layer 1：采纳、驳回、待议等运行时反馈收集；
 - Layer 2：正向/负向案例写入长期记忆，为后续检索与评测提供数据。
 - Layer 3a：版本化策略候选、外置合成 DecisionCard Validation/Holdout 回放、人工激活与父版本回滚。
-- Layer 3b：Skill Bank 最小闭环——从人工反馈中抽取可复用检查模式，经 BM25 检索注入后续任务，通过 Validation/Holdout 回放评测后人工激活，支持版本回滚。
+- Layer 3b：Skill Bank 最小闭环——从人工反馈中抽取可复用检查模式，按决策上下文做 BM25 检索，把命中 Skill 的 `evidence_policy` 合并进本次任务的生效策略，经 Validation/Holdout 回放评测后人工激活，支持版本回滚。
+
+Skill 的字段分成可执行和给人读的两半，边界如下，不做模糊表述：
+
+| 字段 | 作用 |
+| --- | --- |
+| `evidence_policy` | 可执行。检索命中后并入该次研究的生效策略，随组件快照一起进入指纹；门禁阈值与置信度扣减随之改变，卡片上会留下派生出的自检失效条件 |
+| `body` / `description` | 只给人读。写明这个检查为什么存在、验证步骤是什么；系统不解析自然语言，也不假装执行了它 |
+| `scope_markets` / `scope_categories` / `triggers` | 检索用。先按市场与品类过滤，再用 BM25 排序取 top-k |
+
+两点容易被追问，先写在这里：**一**，检索查询是本次研究要做的决策（卡片类型 + 门禁核查的证据维度），不是品类名——查询"pet feeder BR"匹配不到任何检查模式。**二**，评测的 baseline 是父版本 Skill 的指令集（首个版本没有父版本时才对比内置默认策略），所以"新版本是否比它要替换的版本更好"是可判定的；同时要求声明一手来源的指令在 mock 模式下记为 deferred 并在卡片上披露，因为 mock provider 不采集一手来源。
 
 Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的模型演进路线，不会在没有合规样本的情况下伪装成已经完成的能力。
 
@@ -555,7 +567,7 @@ Prompt/Skill 自动优化、SFT、LoRA 和强化学习属于数据积累后的�
 - [x] ECB / UN Comtrade / GSCPI / LSCI / Amazon / Olist 真实 Provider
 - [ ] 定时市场快照、变化检测与阈值告警
 - [x] 可替换 Qwen Model Adapter、结构化输出与源记录 Grounding
-- [x] Skill Bank 最小闭环：候选抽取、BM25 检索、Validation/Holdout 评测、人工激活与回滚
+- [x] Skill Bank 最小闭环：候选抽取、按决策上下文的 BM25 检索、`evidence_policy` 注入生效策略、以父版本为 baseline 的 Validation/Holdout 评测、人工激活与回滚
 - [x] Decision Contract：首单投资决策 Go/Validate/Stop、证据覆盖率、验证结果回填与 metrics-driven 判定
 - [ ] Chroma/Qdrant 双塔检索
 - [ ] 生产任务队列和分布式事件总线

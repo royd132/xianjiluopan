@@ -44,6 +44,9 @@ class RuntimeEvent:
         }
 
 
+SSE_IDLE_TIMEOUT_SECONDS = 120.0  # close stale subscriber after 2 minutes of silence
+
+
 class CollaborationBlackboard:
     """Shared artifact board plus an event stream for loosely coupled agents."""
 
@@ -87,7 +90,10 @@ class CollaborationBlackboard:
                 if event.event_type in {EventType.TASK_COMPLETED, EventType.TASK_FAILED, EventType.TASK_CANCELLED}:
                     return
             while True:
-                event = await queue.get()
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=SSE_IDLE_TIMEOUT_SECONDS)
+                except TimeoutError:
+                    break
                 yield event
                 if event.event_type in {EventType.TASK_COMPLETED, EventType.TASK_FAILED, EventType.TASK_CANCELLED}:
                     break

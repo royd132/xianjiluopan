@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import math
 from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
@@ -256,6 +257,84 @@ class DecisionContract(BaseModel):
     override_reason: str | None = None
     override_by: str | None = None
     override_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    acknowledged_by: str | None = None
+    execution_tasks: list[ExecutionTask] = Field(default_factory=list)
+    validation_submitted: bool = False
+
+
+class ContractAcknowledgementRequest(BaseModel):
+    operator: str = Field(default="demo-user", min_length=1, max_length=80)
+
+
+class UnitEconomicsRequest(BaseModel):
+    """Small, explicit landed-cost calculator for a first-order decision."""
+
+    selling_price: float = Field(gt=0)
+    product_cost: float = Field(ge=0)
+    packaging_cost: float = Field(ge=0, default=0)
+    domestic_shipping: float = Field(ge=0, default=0)
+    international_shipping: float = Field(ge=0, default=0)
+    duty_rate_pct: float = Field(ge=0, le=100, default=0)
+    vat_rate_pct: float = Field(ge=0, le=100, default=0)
+    platform_fee_rate_pct: float = Field(ge=0, le=100, default=0)
+    payment_fee_rate_pct: float = Field(ge=0, le=100, default=0)
+    ad_cost_per_order: float = Field(ge=0, default=0)
+    return_rate_pct: float = Field(ge=0, le=100, default=0)
+    target_margin_pct: float = Field(ge=0, lt=100, default=20)
+
+
+class UnitEconomicsResponse(BaseModel):
+    landed_cost: float
+    duties: float
+    vat: float
+    platform_and_payment_fees: float
+    return_reserve: float
+    contribution_profit: float
+    contribution_margin_pct: float
+    break_even_price: float
+    max_cpc_at_target_margin: float
+
+
+class MonitoringSubscriptionRequest(BaseModel):
+    workspace_id: str = Field(default="default", min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
+    category: str = Field(min_length=2, max_length=100)
+    market: str = Field(min_length=2, max_length=5)
+    cadence: Literal["manual", "daily", "weekly"] = "weekly"
+    channels: list[Literal["in_app", "webhook"]] = Field(default_factory=lambda: ["in_app"])
+
+
+class MonitoringSubscription(BaseModel):
+    subscription_id: str
+    workspace_id: str
+    category: str
+    market: str
+    cadence: Literal["manual", "daily", "weekly"]
+    channels: list[str]
+    active: bool = True
+    created_at: datetime
+    last_checked_at: datetime | None = None
+    last_trigger_count: int = 0
+
+
+class ExecutionTask(BaseModel):
+    task_id: str = Field(default_factory=lambda: str(uuid4()))
+    title: str
+    status: Literal["todo", "in_progress", "done", "blocked"] = "todo"
+    owner: str | None = None
+    due_at: datetime | None = None
+
+
+class ExecutionTaskUpdateRequest(BaseModel):
+    status: Literal["todo", "in_progress", "done", "blocked"]
+    owner: str | None = Field(default=None, max_length=80)
+
+
+class ExecutionTaskCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    status: Literal["todo", "in_progress", "done", "blocked"] = "todo"
+    owner: str | None = Field(default=None, max_length=80)
+    due_at: datetime | None = None
 
 
 class ValidationResultRequest(BaseModel):
@@ -265,6 +344,30 @@ class ValidationResultRequest(BaseModel):
     metrics: dict[str, Any] = Field(default_factory=dict, description="e.g. click_count, intent_rate, cpc, sample_feedback_count")
     outcome: Literal["positive", "negative", "inconclusive"] = "inconclusive"
     notes: str | None = None
+    economics: UnitEconomicsRequest | None = Field(default=None, description="Optional unit economics for factoring into verdict")
+
+    @model_validator(mode="after")
+    def validate_known_metrics(self) -> "ValidationResultRequest":
+        """Keep the free-form payload compatible while bounding decision metrics."""
+
+        for name, value in self.metrics.items():
+            if name not in {"sample_count", "intent_rate", "cpc", "pain_confirmation_rate"}:
+                continue
+            if isinstance(value, bool):
+                raise ValueError(f"{name} must be numeric")
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be numeric") from exc
+            if not math.isfinite(numeric):
+                raise ValueError(f"{name} must be finite")
+            if name == "sample_count" and (numeric < 0 or numeric != int(numeric)):
+                raise ValueError("sample_count must be a non-negative integer")
+            if name in {"intent_rate", "pain_confirmation_rate"} and not 0 <= numeric <= 1:
+                raise ValueError(f"{name} must be between 0 and 1")
+            if name == "cpc" and numeric < 0:
+                raise ValueError("cpc must be non-negative")
+        return self
 
 
 class OverrideRequest(BaseModel):
@@ -276,3 +379,32 @@ class OverrideRequest(BaseModel):
     target_verdict: Literal[DecisionVerdict.GO, DecisionVerdict.STOP]
     reason: str = Field(min_length=1, description="Why the human disagrees with the system verdict")
     operator: str = Field(default="demo-user", min_length=1)
+
+
+class ActualOutcomeRequest(BaseModel):
+    """User-reported real-world result after a decision was executed.
+
+    This closes the loop: the system made a recommendation (was it right?)
+    and this feedback calibrates future policies.
+    """
+
+    actual_revenue: float | None = Field(default=None, ge=0)
+    actual_profit: float | None = None
+    actual_roi_pct: float | None = None
+    verdict_was_correct: bool | None = None
+    notes: str | None = None
+    operator: str = Field(default="demo-user", min_length=1)
+
+
+class ActualOutcomeRecord(BaseModel):
+    outcome_id: str = Field(default_factory=lambda: str(uuid4()))
+    task_id: str
+    contract_id: str
+    system_verdict: DecisionVerdict
+    actual_revenue: float | None = None
+    actual_profit: float | None = None
+    actual_roi_pct: float | None = None
+    verdict_was_correct: bool | None = None
+    notes: str | None = None
+    operator: str
+    reported_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

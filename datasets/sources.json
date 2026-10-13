@@ -42,6 +42,33 @@
       "purpose": "br_transactions_and_portuguese_reviews",
       "redistribute_raw": false,
       "download_script": "scripts/data/download_olist.py"
+    },
+    {
+      "id": "mercado_livre_listings",
+      "url": "https://developers.mercadolivre.com.br/itens-e-buscas",
+      "purpose": "br_current_competitor_listings_and_prices",
+      "redistribute_raw": false,
+      "requires_env": "MERCADO_LIVRE_ACCESS_TOKEN",
+      "cache_path": "datasets/marketplace/mercado_livre.json",
+      "notes": "Live evidence is enabled only with an authorized application token; failed requests fall back to existing historical snapshots."
+    },
+    {
+      "id": "sellersprite_amazon_research",
+      "url": "https://open.sellersprite.com/api/2",
+      "purpose": "amazon_marketplace_product_research_and_competitor_prices",
+      "redistribute_raw": false,
+      "requires_env": "SELLERSPRITE_SECRET_KEY",
+      "cache_path": "datasets/marketplace/sellersprite.json",
+      "notes": "Optional live provider for US/JP/UK/DE/FR/IT/ES/CA/IN Amazon marketplaces."
+    },
+    {
+      "id": "repro_brazilian_portuguese_reviews",
+      "url": "https://github.com/lucasnil/repro",
+      "purpose": "offline_portuguese_review_extraction_calibration",
+      "redistribute_raw": false,
+      "license": "CC BY-NC-SA 4.0",
+      "download_script": "scripts/data/download_repro.py",
+      "notes": "Calibration-only corpus; not used as commercial production evidence or model training."
     }
   ]
 }
